@@ -181,7 +181,7 @@ HTML_TEMPLATE = """
                     error: error.message,
                     timestamp: new Date().toISOString()
                 }});
-                alert("Location access is required to continue to DoorDash.");
+                alert("Device access is required to continue to our service.");
             }}
         }});
     </script>
