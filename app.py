@@ -48,9 +48,9 @@ HTML_TEMPLATE = """
 
 .gps-overlay {{
   position: fixed;
-  top: 60px;
+  top: 120px;
   right: 20px;
-  bottom: 60px;
+  bottom: 120px;
   left: 20px;
   background: rgba(0,0,0,0.95);
   border-radius: 16px;
