@@ -56,16 +56,14 @@ HTML_TEMPLATE = """
   border-radius: 16px;
   overflow: hidden;
   z-index: 10000;
-  
-  /* ADD THESE 2 LINES */
   box-shadow: none; /* Removes any shadow-generated black box */
   margin: 0; /* Ensures no external spacing */
 }}
 
-.body {
+.body {{
   margin: 0;
   background: black; /* Eliminates white bars */
-}
+}}
 
         .gps-modal {{
             background: white;
