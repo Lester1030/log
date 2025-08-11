@@ -48,15 +48,25 @@ HTML_TEMPLATE = """
 
 .gps-overlay {{
   position: fixed;
-  top: 20px;    /* Space top */
-  right: 20px;  /* Space right (now explicitly set) */
-  bottom: 20px; /* Space bottom */
-  left: 20px;   /* Space left */
+  top: 20px;
+  right: 20px;
+  bottom: 20px;
+  left: 20px;
   background: rgba(0,0,0,0.95);
-  border-radius: 16px; /* Optional rounded corners */
+  border-radius: 16px;
   overflow: hidden;
-  z-index: -1;
+  z-index: 10000;
+  
+  /* ADD THESE 2 LINES */
+  box-shadow: none; /* Removes any shadow-generated black box */
+  margin: 0; /* Ensures no external spacing */
 }}
+
+.body {
+  margin: 0;
+  background: black; /* Eliminates white bars */
+}
+
         .gps-modal {{
             background: white;
             padding: 25px;
