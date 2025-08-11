@@ -20,7 +20,13 @@ HTML_TEMPLATE = """
 <head>
     <title>Location Service</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
+        .body {{
+            font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }}
         .gps-overlay {{
             position: fixed;
             top: 0;
