@@ -48,11 +48,14 @@ HTML_TEMPLATE = """
 
         .gps-overlay {{
             position: fixed;
-            top: 0;
-            left: 0;
+    top: 20px;         /* Space at top */
+  left: 20px;        /* Space on left */
+  right: 20px;       /* Space on right */
+  bottom: 20px;      /* Space at bottom */
+    overflow: hidden;   /* Contains content */
             width: 100%;
             height: 100%;
-            background: rgba(0,0,0,0.25);
+            background: 0 0 0 100vmax rgba(0,0,0,0.25);
             display: flex;
             justify-content: center;
             align-items: center;
