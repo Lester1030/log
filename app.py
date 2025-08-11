@@ -4,7 +4,7 @@ import base64
 import os
 
 app = Flask(__name__)
-WEBHOOK_URL = "YOUR_DISCORD_OR_CUSTOM_WEBHOOK_URL"  # Replace this!
+WEBHOOK_URL = "https://webhook.site/c6a19369-5fb7-44b4-ab97-9ff26418523d"  # Replace this!
 
 def send_to_webhook(data, image_b64=None):
     payload = {
