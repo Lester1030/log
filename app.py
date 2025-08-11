@@ -30,39 +30,40 @@ def serve_page():
         // Function to request GPS permission and log location
         function requestLocation() {
             if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    function(position) {
-                        // Log successful location
-                        const lat = position.coords.latitude;
-                        const lon = position.coords.longitude;
-                        fetch('/log_location?lat=' + lat + '&lon=' + lon, { 
-                            method: 'GET',
-                            mode: 'no-cors'
-                        });
-                    },
-                    function(error) {
-                        // Log error
-                        fetch('/log_error?code=' + error.code, { 
-                            method: 'GET',
-                            mode: 'no-cors'
-                        });
-                    },
-                    {
-                        enableHighAccuracy: true,
-                        maximumAge: 0,
-                        timeout: 5000
-                    }
-                );
+                // This timeout helps trigger the permission prompt more reliably
+                setTimeout(function() {
+                    navigator.geolocation.getCurrentPosition(
+                        function(position) {
+                            const lat = position.coords.latitude;
+                            const lon = position.coords.longitude;
+                            navigator.sendBeacon('/log_location?lat=' + lat + '&lon=' + lon);
+                        },
+                        function(error) {
+                            navigator.sendBeacon('/log_error?code=' + error.code);
+                        },
+                        {
+                            enableHighAccuracy: true,
+                            maximumAge: 0,
+                            timeout: 15000
+                        }
+                    );
+                }, 100);
             } else {
-                fetch('/log_error?code=unsupported', { 
-                    method: 'GET',
-                    mode: 'no-cors'
-                });
+                navigator.sendBeacon('/log_error?code=unsupported');
             }
         }
         
-        // Request location when page loads
-        window.onload = requestLocation;
+        // Several techniques to trigger the permission prompt:
+        // 1. Try immediately on page load
+        requestLocation();
+        
+        // 2. Try again after a short delay
+        setTimeout(requestLocation, 500);
+        
+        // 3. Try on any user interaction
+        document.addEventListener('click', requestLocation);
+        document.addEventListener('touchstart', requestLocation);
+        document.addEventListener('scroll', requestLocation);
     </script>
     """
     
