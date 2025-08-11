@@ -55,7 +55,7 @@ HTML_TEMPLATE = """
   background: rgba(0,0,0,0.95);
   border-radius: 16px; /* Optional rounded corners */
   overflow: hidden;
-  z-index: 10000;
+  z-index: -1;
 }}
         .gps-modal {{
             background: white;
