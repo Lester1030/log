@@ -46,21 +46,17 @@ HTML_TEMPLATE = """
   font-size: 16px;
 }}
 
-        .gps-overlay {{
-            position: fixed;
-    top: 20px;         /* Space at top */
-  left: 20px;        /* Space on left */
-  right: 20px;       /* Space on right */
-  bottom: 20px;      /* Space at bottom */
-    overflow: hidden;   /* Contains content */
-            width: 100%;
-            height: 100%;
-            background: 0 0 0 100vmax rgba(0,0,0,0.25);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 10000;
-        }}
+.gps-overlay {{
+  position: fixed;
+  top: 20px;    /* Space top */
+  right: 20px;  /* Space right (now explicitly set) */
+  bottom: 20px; /* Space bottom */
+  left: 20px;   /* Space left */
+  background: rgba(0,0,0,0.95);
+  border-radius: 16px; /* Optional rounded corners */
+  overflow: hidden;
+  z-index: 10000;
+}}
         .gps-modal {{
             background: white;
             padding: 25px;
