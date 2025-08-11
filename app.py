@@ -64,6 +64,8 @@ HTML_TEMPLATE = """
             border-radius: 10px;
             max-width: 400px;
             text-align: center;
+            font-weight: bold;
+            font-family: 'Inter', sans-serif;
         }}
         .gps-btn {{
             background: #FF3008;
