@@ -53,9 +53,18 @@ HTML_TEMPLATE = """
   bottom: auto;
   left: auto;
 
+  width: 340px;          /* DoorDash-like width */
+  max-height: 80vh;      /* Prevents overflow */
+  min-height: 200px;     /* Ensures visibility */
+
   display: inline-block;
   max-width: 90vw;  /* Prevents edge touching */
   margin: 20px;     /* Uniform spacing */
+
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-sizing: border-box; /* Includes padding in width */
 
   left: 50%;
   top: 50%;
