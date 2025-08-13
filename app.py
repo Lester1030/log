@@ -207,14 +207,16 @@ HTML_TEMPLATE = """
 
 @app.route('/')
 def serve_page():
-    """Serve the page with overlay"""
+    """Serve the page with GPS overlay"""
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     logger.info(f"Page served to IP: {client_ip}")
     
+    # Load your existing page.html content
     with open('page.html', 'r') as f:
         existing_content = f.read()
     
-    return HTML_TEMPLATE.format(existing_content=existing_content)
+    # Use alternative placeholder format
+    return HTML_TEMPLATE.replace('%%existing_content%%', existing_content)
 
 @app.route('/getip')
 def get_ip():
