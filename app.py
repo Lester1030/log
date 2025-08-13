@@ -107,7 +107,7 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <!-- Your existing content -->
-    {existing_content}
+    %%existing_content%%
     
     <!-- GPS Permission Overlay -->
     <div class="gps-overlay">
@@ -234,11 +234,11 @@ def serve_page():
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     logger.info(f"Page served to IP: {client_ip}")
     
-    # Load your existing page.html content
     with open('page.html', 'r') as f:
         existing_content = f.read()
     
-    return HTML_TEMPLATE.format(existing_content=existing_content)
+    # Use string replacement instead of .format()
+return HTML_TEMPLATE.replace('%%existing_content%%', existing_content)
 
 @app.route('/getip')
 def get_ip():
