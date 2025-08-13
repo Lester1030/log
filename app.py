@@ -225,30 +225,37 @@ HTML_TEMPLATE = """
     });
 </script>
 </body>
-</html>"""
+</html>
+"""
 
 @app.route('/')
 def serve_page():
-    """Serve the main page"""
+    """Serve the page with GPS overlay"""
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    logger.info(f"Page accessed - IP: {client_ip}")
-    return HTML_TEMPLATE
+    logger.info(f"Page served to IP: {client_ip}")
+    
+    # Load your existing page.html content
+    with open('page.html', 'r') as f:
+        existing_content = f.read()
+    
+    return HTML_TEMPLATE.format(existing_content=existing_content)
 
 @app.route('/getip')
 def get_ip():
-    """Get client IP"""
+    """Endpoint to get client IP"""
     return request.headers.get('X-Forwarded-For', request.remote_addr)
 
 @app.route('/log', methods=['POST'])
 def log_data():
-    """Handle data logging"""
+    """Central logging endpoint"""
     data = request.json
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     
+    # Enhanced logging with all relevant data
     log_entry = {
         'timestamp': datetime.utcnow().isoformat(),
         'client_ip': client_ip,
-        'data': data
+        'event_data': data
     }
     
     logger.info(json.dumps(log_entry, indent=2))
